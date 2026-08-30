@@ -263,9 +263,18 @@ function renderCaveats(a) {
 
 // ─── charts ──────────────────────────────────────────────────────────────
 
+// The design height must be cached on first read: assigning `canvas.height`
+// below WRITES the same attribute, so re-reading it on every redraw would
+// compound by devicePixelRatio each frame (charts grew exponentially on
+// retina displays).
+function designHeight(canvas) {
+  if (!canvas.dataset.designH) canvas.dataset.designH = canvas.getAttribute('height');
+  return parseInt(canvas.dataset.designH, 10);
+}
+
 function setupCanvas(canvas) {
   const dpr = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth, h = parseInt(canvas.getAttribute('height'), 10);
+  const w = canvas.clientWidth, h = designHeight(canvas);
   canvas.width = w * dpr; canvas.height = h * dpr;
   canvas.style.height = h + 'px';
   const ctx = canvas.getContext('2d');
@@ -411,7 +420,7 @@ let mapBase = null, mapDims = null;
 function buildMapBase() {
   const canvas = $('map-chart');
   const dpr = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth, h = parseInt(canvas.getAttribute('height'), 10);
+  const w = canvas.clientWidth, h = designHeight(canvas);
   mapDims = { w, h };
   mapBase = document.createElement('canvas');
   mapBase.width = w * dpr; mapBase.height = h * dpr;
