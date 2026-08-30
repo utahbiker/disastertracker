@@ -1,0 +1,29 @@
+{
+  "note": "Per-threshold observation windows used for all rate estimation. A magnitude threshold m uses the longest window in which the merged catalog is complete at m.",
+  "windows": [
+    {
+      "minMag": 7.5,
+      "start": "1900-01-01"
+    },
+    {
+      "minMag": 6.5,
+      "start": "1918-01-01"
+    },
+    {
+      "minMag": 5.5,
+      "start": "1964-01-01"
+    },
+    {
+      "minMag": 4.5,
+      "start": "2000-01-01"
+    }
+  ],
+  "bandCaps": [
+    {
+      "minMag": 4.5,
+      "maxMag": 5.5,
+      "end": "2024-01-08"
+    }
+  ],
+  "buildDate": "2026-08-30"
+}

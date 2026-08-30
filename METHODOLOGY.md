@@ -1,0 +1,228 @@
+# Methodology — Earthquake Occurrence Probabilities
+
+This document specifies, at a level intended to survive academic scrutiny, exactly how every
+number shown by the Disaster Probability Tracker is computed: the data, the estimators, the
+model-selection rules, the validation, and the limitations. Nothing in the app is produced by
+any method not described here.
+
+**One sentence version:** the app reports *long-run statistical occurrence frequencies* of
+earthquakes, computed from complete portions of merged instrumental catalogs with exact
+uncertainty, under a homogeneous Poisson model (default) and a Gamma renewal model
+(time-dependent view) — it does not, and cannot, predict individual earthquakes.
+
+---
+
+## 1. Data
+
+### 1.1 Sources
+
+| Era | Source | Magnitudes | License |
+|---|---|---|---|
+| 2000-01-01 → 2024-01-08 | USGS ANSS Comprehensive Catalog (ComCat), M4.5+, all depths, `type=earthquake` only | ComCat preferred magnitudes (mww/mwc/mwb/mb…) | Public domain (US Gov) |
+| 1900 → 1999 | ISC-GEM Global Instrumental Earthquake Catalogue (uniformly re-processed Mw), via the Swiss Re Historical Earthquake Statistics Dataset | Mw | CC BY-SA 3.0 |
+| 2024-01-09 → 2025-06-05 ("bridge") | ComCat M5.5+, depth ≤ 70 km, via the Swiss Re dataset | ComCat preferred | Public domain |
+| runtime → today | Live USGS FDSN event query (M5+), fetched by the browser and cached locally; **replaces** the bridge segment entirely when online | ComCat preferred | Public domain |
+| 10 AD → 1899 | NGDC/WDS Significant Earthquake Database, via the Swiss Re dataset | mixed/unknown | Public domain |
+
+Merge rules are hard cutovers by date (no fuzzy dedup needed): ISC-GEM before 2000, ComCat CSV
+from 2000, Swiss Re/ComCat bridge after the CSV ends, live top-up after that. Rows without a
+usable magnitude are excluded from all statistics. The pre-1900 NGDC record is **display context
+only** — it is a *damage-selected* catalog (deaths, damage, tsunamis), not a complete sample of
+seismicity, and it never enters any rate computation.
+
+### 1.2 Completeness windows
+
+A catalog is "complete at magnitude m" from the date after which essentially every event ≥ m on
+Earth was detected and cataloged. Using data before that date biases rates low. Following the
+ISC-GEM documentation (Storchak et al. 2013) and standard practice:
+
+| Threshold | Complete from |
+|---|---|
+| M ≥ 7.5 | 1900 |
+| M ≥ 6.5 | 1918 |
+| M ≥ 5.5 | 1964 |
+| M ≥ 4.5 | 2000 (ComCat era) |
+
+Every rate for threshold m is computed **only inside the longest window complete at m**; this is
+why different magnitudes legitimately use different observation spans. Additionally, the
+[4.5, 5.0) band is capped at the bundled ComCat end date (2024-01-08) because the live top-up
+fetches M5+ only; and when the app is fully offline, all statistics are evaluated *as of the
+bundled data edge* rather than today, so quiet time that is merely un-cataloged is never counted
+as real quiet time.
+
+These windows are conservative globally. For a specific well-instrumented region (California,
+Japan) local completeness is better than this; for mid-ocean ridges before 1964 it can be worse.
+
+## 2. Estimators
+
+### 2.1 Empirical exceedance rates (the primary object)
+
+For threshold m with n events observed over T complete years, the annual rate is λ̂ = n/T, with
+the **exact (Garwood 1936) Poisson confidence interval**:
+
+```
+λ_lo = χ²(α/2, 2n) / 2T          (0 when n = 0)
+λ_hi = χ²(1 − α/2, 2n + 2) / 2T
+```
+
+computed from a full implementation of the regularized incomplete gamma function (verified in the
+test suite against standard χ² tables). This interval is honest at any n, including n = 0 and
+n = 4 — which matters, because the interesting thresholds are exactly the rare ones.
+
+### 2.2 Gutenberg–Richter b-value
+
+The magnitude–frequency relation log₁₀ N(≥M) = a − bM (Gutenberg & Richter 1944) is fitted by the
+Aki–Utsu maximum-likelihood estimator with the Tinti & Mulargia (1987) correction for
+0.1-magnitude binning:
+
+```
+b̂ = log₁₀(e) / ( M̄ − (Mc − ΔM/2) ),   ΔM = 0.1
+```
+
+with the Shi & Bolt (1982) standard error. The fit uses **only the homogeneous modern era**
+(2000 → catalog end, magnitudes from a single cataloging regime) above the completeness magnitude
+Mc. Globally Mc = 4.5 (catalog floor); regionally Mc is estimated by maximum curvature (Wiemer &
+Wyss 2000) + 0.2. The global fit on the shipped data gives **b = 1.14 ± 0.003** — slightly above
+the canonical ~1.0 because ComCat preferred magnitudes mix mb (which saturates) with Mw; this is
+a documented property of mixed-type catalogs, and the b-value is used only for interpolation and
+regional scaling, never to override empirical counts (§ 2.4).
+
+### 2.3 Tapered Gutenberg–Richter (large-magnitude tail)
+
+A pure G-R line overpredicts M ≥ 9 rates because the Earth's plate system imposes a finite corner
+moment. For extrapolation beyond robust empirical counts the app fits the **tapered
+Pareto/Gutenberg–Richter distribution** (Kagan 2002) on seismic moments (Hanks & Kanamori 1979,
+log₁₀M₀ = 1.5Mw + 9.05) of all M5.5+ events in the complete record: β fixed at (2/3)·b̂ (profile
+likelihood), corner moment maximized by golden-section search. On the shipped data the corner
+magnitude comes out **Mc ≈ 9.2**, consistent with published global estimates (Kagan's global
+corner Mw ≈ 8.5–9.6 depending on zonation and era).
+
+### 2.4 Rate-selection policy
+
+For the headline number at threshold m:
+
+1. **n ≥ 3 events in the complete window → the empirical rate**, with its exact CI. Counted
+   reality beats any curve.
+2. **n < 3, global scope → tapered G-R extrapolation**, flagged in the UI, with a widened
+   uncertainty band (never narrower than the empirical exact CI).
+3. **n < 3, local scope → fixed-b scaling**: the regional empirical rate at the largest locally
+   robust threshold, scaled down by 10^(−b·Δm) with the global b (regional b is used instead when
+   the region itself has ≥ 50 events above its Mc). Flagged in the UI.
+
+The magnitude–frequency chart always shows the empirical points *and* the fitted curves together
+with confidence whiskers, so the extrapolation is visually auditable.
+
+## 3. Probability models
+
+### 3.1 Poisson (default)
+
+P(≥1 event in the next T years) = 1 − e^(−λT). The homogeneous Poisson model is the standard
+null model for large-earthquake occurrence at global and regional scale (Kagan & Jackson 1991;
+Michael 2011). The 95% band shown is the rate CI propagated through this formula. Scrubbing the
+time slider widens T — the probability rise you see is *cumulative window probability*, which is
+the statistically meaningful quantity (under Poisson, the hazard per unit time never rises no
+matter how long it has been quiet).
+
+### 3.2 Renewal ("overdue" view) — and why it usually refuses to say "overdue"
+
+The colloquial "overdue" intuition is a renewal-process claim: inter-event times follow some
+distribution, and the conditional probability of an event given elapsed quiet time τ is
+
+```
+P(event in (τ, τ+T] | quiet until τ) = [F(τ+T) − F(τ)] / [1 − F(τ)]
+```
+
+The app fits a **Gamma distribution to the observed inter-event times** by full MLE (Newton
+iteration on the digamma equation, Minka initialization), inside the same completeness window,
+and evaluates that conditional probability at the actual current open interval. It requires ≥ 8
+observed intervals; below that it reports "n/a" rather than fitting noise.
+
+The shape parameter is the verdict. CV = 1/√k:
+
+- **CV ≈ 1** → exponential → memoryless → "overdue" is meaningless.
+- **CV > 1** → *clustered* (aftershock sequences, triggering): a long quiet spell makes the
+  near-term probability slightly **lower**, the opposite of overdue.
+- **CV < 1** → quasi-periodic: quiet time genuinely raises the hazard.
+
+On real data, global inter-event CVs at every threshold are **> 1** (1.2–1.9 on the shipped
+catalog): world seismicity clusters. Genuine quasi-periodic "overdue" behavior is an
+individual-fault phenomenon (e.g., the Brownian Passage Time models used for specific fault
+segments in UCERF3, Matthews et al. 2002; Field et al. 2015) and requires paleoseismic recurrence
+data that no instrumental catalog contains. The app says exactly this in the UI instead of
+manufacturing a rising "overdue meter" that the data do not support. This is the difference
+between a tool that can be scrutinized and one that flatters intuition.
+
+Aftershock note: rates are **total seismicity, not declustered**. For the question the app
+answers — "will at least one event ≥ m occur?" — total rates are the right choice; they slightly
+inflate short-window probabilities immediately after large events (when clustered hazard really
+is elevated). A declustered/ETAS view is a documented possible extension, not a correction.
+
+### 3.3 Regional method
+
+A local area is a great-circle disc (haversine distance ≤ radius). Rates use the same
+completeness windows, on events inside the disc. b is fitted regionally when the disc has ≥ 50
+events above its estimated Mc, otherwise global b with regional anchoring (§ 2.4.3). When the
+requested magnitude exceeds anything observed in the disc, the number shown is an extrapolation
+and the UI flags that whether the local tectonics can produce such an event is a *geological*
+question the catalog cannot answer.
+
+## 4. Validation
+
+The test suite (`test/engine.test.mjs`, 24 tests, run in CI-able Node) pins:
+
+- special functions against χ² tables, Γ identities, digamma values;
+- estimator recovery on synthetic data (G-R b on binned exponential samples; Gamma MLE on
+  simulated Gamma variates; memorylessness of the exponential renewal case);
+- **the shipped catalog against published benchmarks**:
+
+| Quantity | This app | Published |
+|---|---|---|
+| Global b (modern era) | 1.14 ± 0.003 | ~0.9–1.2 (mixed-magnitude catalogs) |
+| λ(M ≥ 7) | 13.3 /yr | USGS long-term average ~15 /yr |
+| λ(M ≥ 8) | 0.88 /yr | ~1 /yr |
+| M ≥ 9 events since 1900 | 4 (1960, 1964, 2004, 2011; 1952 Kamchatka is Mw 8.8 in this ISC-GEM edition) | 4–5 depending on catalog |
+| P(M ≥ 9 anywhere, 1 yr) | 3.1% [0.9%, 7.8%] | ~3–5% (Poisson on the same record) |
+| TGR corner magnitude | 9.2 | 8.5–9.6 (Kagan 2002 and successors) |
+| P(M ≥ 5 within 200 km of Draper UT, 50 yr) | ~89% | UWG-2016 Wasatch Front M5+ 50-yr: 93% |
+
+The Draper M5 agreement is genuine cross-validation: the Utah Working Group number folds in
+paleoseismology, ours is instrumental-only, and at M5 the instrumental record is dense enough
+that they converge. At M6.75+ they diverge (UWG 43%/50 yr vs. a few percent here) — exactly the
+short-record limitation § 5.2 documents, surfaced as a UI caveat within 300 km of the Wasatch.
+
+## 5. Limitations (read before quoting any number)
+
+1. **These are frequencies, not predictions.** Deterministic earthquake prediction (time, place,
+   magnitude of a specific future event) does not exist at any scientific standard.
+2. **Short instrumental record vs. slow faults.** 60–125 years of catalog cannot constrain
+   faults with 300–2,000-year recurrence (Wasatch, Cascadia, many intraplate zones). Instrumental
+   rates *underestimate* large-magnitude hazard there; paleoseismic studies are the corrective,
+   and regional hazard authorities (USGS NSHM, UWG, GEM) should be preferred for
+   building-code-grade decisions.
+3. **Magnitude heterogeneity.** ISC-GEM Mw before 2000, ComCat preferred magnitudes after.
+   The b-value is fitted on the homogeneous era only, but cross-era rate comparisons at a fixed
+   threshold inherit ~0.1-unit magnitude-scale noise.
+4. **Depth truncation in the bridge segment** (M5.5+, ≤ 70 km, 2024→mid-2025): deep-focus events
+   in that 17-month window are missing unless the live top-up is active (it usually is).
+5. **Disc geometry** is a blunt instrument: probabilities scale with the area drawn, and a disc
+   answers "near this point," not "on this fault" or "at this site" (no ground-motion modeling —
+   this is occurrence probability, not shaking hazard, i.e., not a PSHA).
+6. **No declustering / ETAS**: short-window probabilities right after a large regional event are
+   conservative (elevated), by design.
+
+## 6. References
+
+- Aki, K. (1965). Maximum likelihood estimate of b in the formula log N = a − bM. *Bull. Earthq. Res. Inst.* 43.
+- Field, E. H., et al. (2015). UCERF3: A synthesis. *BSSA* 105(2A).
+- Garwood, F. (1936). Fiducial limits for the Poisson distribution. *Biometrika* 28.
+- Gutenberg, B., & Richter, C. F. (1944). Frequency of earthquakes in California. *BSSA* 34.
+- Hanks, T. C., & Kanamori, H. (1979). A moment magnitude scale. *JGR* 84.
+- Kagan, Y. Y. (2002). Seismic moment distribution revisited: I. *GJI* 148.
+- Kagan, Y. Y., & Jackson, D. D. (1991). Long-term earthquake clustering. *GJI* 104.
+- Matthews, M. V., Ellsworth, W. L., & Reasenberg, P. A. (2002). A Brownian model for recurrent earthquakes. *BSSA* 92.
+- Michael, A. J. (2011). Random variability explains apparent global clustering of large earthquakes. *GRL* 38.
+- Shi, Y., & Bolt, B. A. (1982). The standard error of the magnitude-frequency b value. *BSSA* 72.
+- Storchak, D. A., et al. (2013). Public release of the ISC-GEM Global Instrumental Earthquake Catalogue (1900–2009). *Seism. Res. Lett.* 84.
+- Tinti, S., & Mulargia, F. (1987). Confidence intervals of b values for grouped magnitudes. *BSSA* 77.
+- Wiemer, S., & Wyss, M. (2000). Minimum magnitude of completeness in earthquake catalogs. *BSSA* 90.
+- Working Group on Utah Earthquake Probabilities (2016). *Earthquake probabilities for the Wasatch Front region.* Utah Geological Survey Misc. Pub. 16-3.
