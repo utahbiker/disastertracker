@@ -1,0 +1,17 @@
+# Cloudflare Pages headers for tracker.goinwardout.com
+# The catalog files are large (~4 MB total) and change only when the ETL
+# reruns — let browsers keep them for a day; Cloudflare's edge cache +
+# brotli handle the rest. App code revalidates hourly so pushes show up.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/data/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/*.js
+  Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+
+/*.css
+  Cache-Control: public, max-age=3600, stale-while-revalidate=86400

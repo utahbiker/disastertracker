@@ -25,9 +25,27 @@ python3 -m http.server 8080     # or any static file server
 # open http://localhost:8080
 ```
 
-Deploy = copy this directory to any static hosting (Vercel, Netlify, GitHub Pages, an S3
-bucket, the same hosting as any other static site). The app must be *served* (not opened via
+Deploy = copy this directory to any static hosting. The app must be *served* (not opened via
 `file://`) because it fetches its data files and uses ES modules.
+
+### Production: tracker.goinwardout.com (Cloudflare Pages)
+
+The goinwardout.com zone is on Cloudflare (same setup as the retreat site). One-time setup in
+the Cloudflare dashboard — no build step, so the config is minimal:
+
+1. **Workers & Pages → Create → Pages → Connect to Git** → select `utahbiker/go-inward-out`.
+2. Production branch: `main` · Build command: *(leave empty)* · Build output directory:
+   `disaster-tracker`.
+3. After the first deploy: **Custom domains → Set up a custom domain** →
+   `tracker.goinwardout.com`. The zone is already on Cloudflare, so it creates the CNAME
+   record automatically and issues the cert.
+
+Every push to `main` redeploys automatically (a copy of static files — seconds, no minutes
+burned). `_headers` in this directory sets edge/browser caching: catalog data 1 day, app code
+1 hour.
+
+Alternative without the dashboard: `npx wrangler pages deploy disaster-tracker
+--project-name gio-tracker` after `npx wrangler login` on any machine.
 
 **Live data:** on load the app fetches all M5+ events since the bundled catalog's end straight
 from the USGS public API (browser-side, CORS-enabled, no key) and caches them in
