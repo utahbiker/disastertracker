@@ -20,8 +20,7 @@ models) is the template for the rest (see Roadmap).
 It's a fully static site — any static host works, no build step, no server code, no keys.
 
 ```bash
-cd disaster-tracker
-python3 -m http.server 8080     # or any static file server
+python3 -m http.server 8080     # or any static file server, from the repo root
 # open http://localhost:8080
 ```
 
@@ -33,19 +32,18 @@ Deploy = copy this directory to any static hosting. The app must be *served* (no
 The goinwardout.com zone is on Cloudflare (same setup as the retreat site). One-time setup in
 the Cloudflare dashboard — no build step, so the config is minimal:
 
-1. **Workers & Pages → Create → Pages → Connect to Git** → select `utahbiker/go-inward-out`.
-2. Production branch: `main` · Build command: *(leave empty)* · Build output directory:
-   `disaster-tracker`.
+1. **Workers & Pages → Create → Pages → Connect to Git** → select `utahbiker/disaster-tracker`.
+2. Production branch: `main` · Build command: *(leave empty)* · Build output directory: `/`.
 3. After the first deploy: **Custom domains → Set up a custom domain** →
    `tracker.goinwardout.com`. The zone is already on Cloudflare, so it creates the CNAME
    record automatically and issues the cert.
 
 Every push to `main` redeploys automatically (a copy of static files — seconds, no minutes
-burned). `_headers` in this directory sets edge/browser caching: catalog data 1 day, app code
+burned). `_headers` at the repo root sets edge/browser caching: catalog data 1 day, app code
 1 hour.
 
-Alternative without the dashboard: `npx wrangler pages deploy disaster-tracker
---project-name gio-tracker` after `npx wrangler login` on any machine.
+Alternative without the dashboard: `npx wrangler pages deploy .
+--project-name disaster-tracker` after `npx wrangler login` on any machine.
 
 **Live data:** on load the app fetches all M5+ events since the bundled catalog's end straight
 from the USGS public API (browser-side, CORS-enabled, no key) and caches them in
@@ -55,7 +53,6 @@ edge and a red banner says so.
 ## Layout
 
 ```
-disaster-tracker/
   index.html            the app shell
   app.js                UI, canvas charts, live USGS top-up
   engine.js             ALL statistics — pure ESM, browser + Node, no dependencies
@@ -74,7 +71,7 @@ disaster-tracker/
 ## Tests
 
 ```bash
-node --test disaster-tracker/test/engine.test.mjs
+node --test test/engine.test.mjs
 ```
 
 Pins χ²/Γ/digamma special functions to table values, recovers known parameters from synthetic
@@ -89,11 +86,11 @@ The bundled catalog is a build artifact of `etl/build-catalog.mjs` over two publ
 ```bash
 git clone --depth 1 https://github.com/SwissRe/Historical-Earthquake-Statistics-Dataset
 git clone --depth 1 https://github.com/nadeeshafdo/SeismicDataWorldwide
-node disaster-tracker/etl/build-catalog.mjs \
+node etl/build-catalog.mjs \
   --comcat  SeismicDataWorldwide/query_M4.5+_2000-2024.csv \
   --swissre Historical-Earthquake-Statistics-Dataset/Historical_Earthquake_Dataset.geojson \
-  --out     disaster-tracker/data
-node --test disaster-tracker/test/engine.test.mjs   # always re-verify after a rebuild
+  --out     data
+node --test test/engine.test.mjs   # always re-verify after a rebuild
 ```
 
 This is rarely needed — the runtime USGS top-up keeps the app current on its own. Rebuild when a
@@ -116,7 +113,7 @@ locations, cross-hazard queries, larger catalogs), `db/` contains:
 Apply the SQL through your project's migration tooling, then:
 
 ```bash
-SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node disaster-tracker/db/import-catalog.mjs
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node db/import-catalog.mjs
 ```
 
 ## Roadmap — other hazards
@@ -135,4 +132,4 @@ Same discipline per hazard, each with its own completeness story:
 Not a prediction system (none exists), not a site-specific shaking model (no ground-motion —
 occurrence only, not PSHA), and not a substitute for USGS NSHM / Utah Working Group numbers
 where paleoseismic data dominate (the app tells you when that's the case). Details:
-[METHODOLOGY.md § 5](METHODOLOGY.md).
+[METHODOLOGY.md § 5](METHODOLOGY.md). Split out of the go-inward-out repo 2026-08-30 — this is its own product, not a GIO feature.
