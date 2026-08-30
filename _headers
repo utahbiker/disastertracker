@@ -7,11 +7,16 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
 
-/data/*
-  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
-
+# App code must always revalidate: there is no content hashing in the file
+# names, so any positive max-age pins visitors to stale (possibly buggy) code
+# until it expires. Revalidation is a cheap 304 via Pages' ETags.
 /*.js
-  Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+  Cache-Control: public, max-age=0, must-revalidate
 
 /*.css
-  Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Catalog data is large and changes only on ETL rebuilds; an hour of browser
+# cache + ETag revalidation after that is the right trade.
+/data/*
+  Cache-Control: public, max-age=3600, must-revalidate
