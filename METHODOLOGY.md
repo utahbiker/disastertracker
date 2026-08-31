@@ -429,3 +429,58 @@ source.
 - Shearer, P. M., & Stark, P. B. (2012). Global risk of big earthquakes has not recently increased. *PNAS* 109(3).
 - Rougier, J., et al. (2018). The global magnitude–frequency relationship for large explosive volcanic eruptions. *EPSL* 482.
 - National Geophysical Data Center / World Data Service: NCEI/WDS Global Significant Earthquake Database. NOAA. doi:10.7289/V5TD9V7K
+
+---
+
+# Part IV — Model evaluation: the accuracy report card
+
+Accuracy here is a measured quantity, not a claim. `backtest/backtest.mjs`
+walks forward through history month by month (2010-01 → 2024-01, 169 months):
+for each month and target it fits every candidate model using ONLY earlier
+events (no lookahead), forecasts P(≥1 qualifying event that month), and scores
+against what happened — Brier score, log score, and Brier Skill Score (BSS)
+relative to the flat constant-rate baseline M0. Calibration is checked by
+bucketing forecasts against observed frequencies. The same run executes in CI
+(`test/backtest.test.mjs`) so the report card cannot silently rot.
+
+## 18. Results (snapshot data, 169 held-out months)
+
+| Target | events | M1 seasonal | M2 + trend | M3 + cluster |
+|---|---|---|---|---|
+| deaths ≥ 100, global | 128 | **+5.1%** | **+7.7%** | +4.8% |
+| deaths ≥ 1,000, global | 30 | +0.6% | +0.6% | +0.6% |
+| deaths ≥ 10,000, global | 7 | −2.0% | −2.0% | −2.0% |
+| deaths ≥ 100, US | 10 | +0.7% | +0.7% | +0.7% |
+| damage ≥ $10B, global | 39 | +3.6% | +3.6% | +2.3% |
+
+(Cells are BSS vs the flat baseline; positive = more skillful.)
+
+## 19. What was adopted, and what was rejected
+
+- **Seasonality (M1) is validated** and stays.
+- **The trend adjustment (M2) is adopted**: a Poisson log-linear trend fitted
+  to the aggregate annual counts of qualifying events inside the completeness
+  window, evaluated at the forecast date. Guards (all part of the validated
+  configuration, implemented once in `poissonTrendMultiplier` and shared by
+  the engine and the backtest): the trend applies only when its slope is
+  significant (|z| ≥ 2), the multiplier is clamped to [⅓, 3], and the
+  projection never extends more than 3 years past the data. Where the gate
+  closes, M2 ≡ M1 — which is why most rows tie. Where it opens (deaths ≥ 100:
+  event frequency at that severity has declined significantly across
+  1990→2024), it corrects exactly the over-forecasting the calibration table
+  shows for the flat model (mean forecast 0.89 vs observed 0.80).
+- **Monthly clustering (M3) is rejected**: conditioning on the previous
+  month's activity scored below plain seasonality (+4.8% < +5.1% at
+  deaths ≥ 100). Whatever month-to-month dependence exists is already
+  captured by the seasonal cycle at this granularity. Sub-monthly aftershock
+  clustering for the earthquake page remains plausible future work — the
+  harness is ready to judge it.
+- The small negative skill at deaths ≥ 10,000 (7 events in 14 years) reflects
+  seasonal-factor noise at a threshold too sparse for a monthly climatology;
+  the effect is within noise and the seasonal factor at such thresholds is
+  driven by the shared floor (§ 10), not the sparse events themselves.
+
+## 20. Scoring references
+
+- Brier, G. W. (1950). Verification of forecasts expressed in terms of probability. *Mon. Wea. Rev.* 78.
+- Gneiting, T., & Raftery, A. E. (2007). Strictly proper scoring rules, prediction, and estimation. *JASA* 102.
