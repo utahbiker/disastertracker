@@ -164,29 +164,41 @@ export class Globe {
     for (let lat = -60; lat <= 60; lat += 30) this._polyline(this._sample((s) => [lat, s]), false);
     for (let lon = -180; lon < 180; lon += 30) this._polyline(this._sample((s) => [(s / 2) - 90, lon], 90), false);
 
-    // coastlines
-    ctx.strokeStyle = 'rgba(216,201,138,0.55)';
+    // coastlines — kept dim so the pings own the foreground
+    ctx.strokeStyle = 'rgba(216,201,138,0.38)';
     ctx.lineWidth = 1;
     for (const ring of this.world.rings) this._ring(ring);
 
-    // pings
+    // pings: white-hot core + colored glow halo + two staggered expanding
+    // sonar rings. Deliberately loud — this is the whole point of the globe.
     this.events.forEach((e, i) => {
       const s = this._screen(e.lat, e.lon);
       if (!s.visible) return;
       const sel = i === this.selected;
-      const phase = ((t / 1400) + i * 0.37) % 1;
-      const rr = 4 + phase * (sel ? 22 : 14);
-      ctx.strokeStyle = e.color.replace('ALPHA', String((1 - phase) * (sel ? 0.95 : 0.6)));
-      ctx.lineWidth = sel ? 1.8 : 1.2;
-      ctx.beginPath(); ctx.arc(s.x, s.y, rr, 0, 7); ctx.stroke();
-      ctx.fillStyle = e.color.replace('ALPHA', sel ? '1' : '0.9');
-      ctx.beginPath(); ctx.arc(s.x, s.y, sel ? 4.5 : 3, 0, 7); ctx.fill();
+      const maxR = sel ? 30 : 20;
+      for (const off of [0, 0.5]) {
+        const phase = ((t / 1600) + i * 0.37 + off) % 1;
+        const rr = 5 + phase * maxR;
+        ctx.strokeStyle = e.color.replace('ALPHA', ((1 - phase) * (sel ? 1 : 0.85)).toFixed(3));
+        ctx.lineWidth = sel ? 2.4 : 2;
+        ctx.beginPath(); ctx.arc(s.x, s.y, rr, 0, 7); ctx.stroke();
+      }
+      // glow halo
+      ctx.save();
+      ctx.shadowColor = e.color.replace('ALPHA', '1');
+      ctx.shadowBlur = sel ? 16 : 10;
+      ctx.fillStyle = e.color.replace('ALPHA', '1');
+      ctx.beginPath(); ctx.arc(s.x, s.y, sel ? 6 : 4.5, 0, 7); ctx.fill();
+      ctx.restore();
+      // white-hot center
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.beginPath(); ctx.arc(s.x, s.y, sel ? 2.6 : 1.8, 0, 7); ctx.fill();
       if (sel) {
         ctx.fillStyle = 'rgba(232,236,244,0.95)';
-        ctx.font = '11px sans-serif';
+        ctx.font = 'bold 11px sans-serif';
         const label = e.short;
-        const tx = Math.min(Math.max(s.x + 9, 6), w - ctx.measureText(label).width - 6);
-        ctx.fillText(label, tx, s.y - 9);
+        const tx = Math.min(Math.max(s.x + 11, 6), w - ctx.measureText(label).width - 6);
+        ctx.fillText(label, tx, s.y - 11);
       }
     });
   }

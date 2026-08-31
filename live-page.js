@@ -54,9 +54,11 @@ async function refreshGlobe() {
     // but the globe runs on what is positioned
   } catch { /* status line reports */ }
   const events = L.mergeGlobeEvents(quakes, alerts);
+  const firstLoad = globe.events.length === 0;
   globe.setEvents(events);
   renderList(events);
-  if (events.length) { globe.select(0, false); highlight(0); }
+  // on first load, fly to the newest event so a ping is front and center
+  if (events.length) { globe.select(0, firstLoad); highlight(0); }
   $('data-status').textContent = events.length
     ? `${events.length} major events on the globe (${sources.join(' + ')}) · earthquakes M ≥ ${L.GLOBE_QUAKE_MIN_MAG} · GDACS orange/red · updated ${new Date().toTimeString().slice(0, 5)}`
     : 'Live feeds unreachable from this network — the globe will retry. The Overview statistics are unaffected.';

@@ -154,15 +154,17 @@ export async function fetchAlerts() {
 export const GLOBE_QUAKE_MIN_MAG = 5.9;
 export const GLOBE_MAX_EVENTS = 20;
 
-// ping colors per hazard family ('ALPHA' replaced at render time)
+// ping colors per hazard family ('ALPHA' replaced at render time).
+// Quakes are bright saturated gold — deliberately hotter than the dim
+// brass coastlines so they can never camouflage against the geography.
 const PING = {
-  quake: 'rgba(216,201,138,ALPHA)',
-  TC: 'rgba(127,168,217,ALPHA)',
-  FL: 'rgba(106,185,176,ALPHA)',
-  VO: 'rgba(224,131,79,ALPHA)',
-  WF: 'rgba(212,117,106,ALPHA)',
-  DR: 'rgba(201,161,91,ALPHA)',
-  other: 'rgba(176,127,217,ALPHA)',
+  quake: 'rgba(255,214,90,ALPHA)',
+  TC: 'rgba(120,180,255,ALPHA)',
+  FL: 'rgba(90,220,205,ALPHA)',
+  VO: 'rgba(255,140,70,ALPHA)',
+  WF: 'rgba(255,110,95,ALPHA)',
+  DR: 'rgba(222,175,95,ALPHA)',
+  other: 'rgba(200,140,255,ALPHA)',
 };
 
 /**
