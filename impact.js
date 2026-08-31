@@ -12,7 +12,7 @@
 // climatology over the forecast window — materially different from 1 only
 // for sub-annual windows.
 
-import { poissonRateCI, poissonProb } from './engine.js';
+import { poissonRateCI, poissonProb, fitGammaMLE, gammaCDF } from './engine.js';
 
 /**
  * Poisson log-linear trend fit on annual counts (IRLS): log mu_y = a + b*x.
@@ -248,4 +248,40 @@ export function exceedanceCurve(imp, { metric, us = false, points = 28 }) {
     out.push({ x, lambda: a.lambda, ci95: a.ci95, perHazard: a.perHazard.map((p) => ({ type: p.type, lambda: p.lambda })) });
   }
   return out;
+}
+
+
+/**
+ * Renewal ("overdue") assessment for an impact threshold: fits a Gamma
+ * distribution to the observed inter-event gaps inside the completeness
+ * window and conditions on the time elapsed since the last event.
+ * Requires >= 15 gaps to fit honestly. This is a COMPARISON view: the
+ * headline stays Poisson+trend unless walk-forward backtesting shows the
+ * renewal conditioning predicts better (backtest model M4).
+ */
+export function assessRenewal(imp, { metric, threshold, windowYears, us = false, nowMs = Date.now() }) {
+  const table = metric === 'deaths' ? imp.completeness.deaths : imp.completeness.damageK;
+  const startYear = windowStartYear(threshold, table);
+  if (startYear === null) return { ok: false, reason: 'below modeled range' };
+  const startDay = Math.round((Date.UTC(startYear, 0, 1) - EPOCH_1900_MS) / DAY_MS);
+  const days = [];
+  for (let i = 0; i < imp.n; i++) {
+    if (imp.value(i, metric, us) >= threshold && imp.day[i] >= startDay && imp.day[i] < imp.meta.dataEndDay) days.push(imp.day[i]);
+  }
+  days.sort((a, b) => a - b);
+  const gaps = [];
+  for (let i = 1; i < days.length; i++) gaps.push(Math.max(1 / 365.25, (days[i] - days[i - 1]) / 365.25));
+  if (gaps.length < 15) return { ok: false, reason: 'too few inter-event gaps', nGaps: gaps.length };
+  const fit = fitGammaMLE(gaps);
+  if (!fit) return { ok: false, reason: 'degenerate fit', nGaps: gaps.length };
+  const elapsedYears = (dayOfMs(nowMs) - days[days.length - 1]) / 365.25;
+  const F = (x) => gammaCDF(x, fit.k, fit.theta);
+  const surv = 1 - F(elapsedYears);
+  const prob = surv < 1e-9 ? 1 : Math.min(1, Math.max(0, (F(elapsedYears + windowYears) - F(elapsedYears)) / surv));
+  return {
+    ok: true, nGaps: gaps.length,
+    meanGapYears: fit.mean, cv: fit.cv, k: fit.k,
+    elapsedYears, lastDay: days[days.length - 1],
+    prob,
+  };
 }

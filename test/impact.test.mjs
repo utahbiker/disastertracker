@@ -145,3 +145,18 @@ test('assessImpact exposes the trend factor and applies it to probabilities', ()
   // raw lambda stays the window empirical rate — trend touches probabilities only
   assert.ok(a.lambda > 18 && a.lambda < 30);
 });
+
+test('assessRenewal: ≥100k deaths — quasi-periodic gaps, conditional above Poisson', () => {
+  const r = I.assessRenewal(imp, { metric: 'deaths', threshold: 100000, windowYears: 1, nowMs: Date.UTC(2026, 7, 31) });
+  assert.ok(r.ok, r.reason);
+  assert.ok(r.nGaps >= 20 && r.nGaps <= 30, `gaps=${r.nGaps}`);
+  assert.ok(r.cv > 0.6 && r.cv < 1.0, `cv=${r.cv}`);
+  assert.ok(r.elapsedYears > 13, `elapsed=${r.elapsedYears}`);
+  const a = I.assessImpact(imp, { metric: 'deaths', threshold: 100000, windowYears: 1, nowMs: Date.UTC(2026, 7, 31) });
+  assert.ok(r.prob > a.prob, `renewal ${r.prob} should exceed Poisson ${a.prob} after a long quiet spell with CV<1`);
+});
+
+test('assessRenewal refuses to fit sparse histories', () => {
+  const r = I.assessRenewal(imp, { metric: 'damage', threshold: 3e8, windowYears: 1, nowMs: NOW });
+  assert.equal(r.ok, false);
+});

@@ -23,6 +23,9 @@
 //   M3 cluster    M1 × r when ≥1 qualifying event occurred in the previous
 //                 month, where r = P(event | event last month)/P(event),
 //                 estimated on training months only
+//   M4 renewal    Gamma renewal fit to training inter-event gaps,
+//                 conditioned on time elapsed since the last training event
+//                 ("overdue" logic; falls back to M1 when < 15 gaps)
 //
 // Usage: node backtest/backtest.mjs [--from 2010-01] [--to 2024-01] [--json out.json]
 
@@ -31,6 +34,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import * as I from '../impact.js';
 import { poissonTrendMultiplier } from '../impact.js';
+import { fitGammaMLE, gammaCDF } from '../engine.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const load = (f) => JSON.parse(readFileSync(join(here, '..', 'data', f), 'utf8'));
@@ -132,12 +136,28 @@ function runTarget(t) {
     const p = (rate) => 1 - Math.exp(-Math.max(1e-9, rate) * monthYears);
     const clamp = (x) => Math.min(0.9999, Math.max(0.0001, x));
     const y = events.some((e) => e.day >= m.startDay && e.day < m.endDay) ? 1 : 0;
+
+    // M4: renewal conditioning on training gaps only
+    let m4 = clamp(p(lambda * s));
+    const gaps = [];
+    for (let i = 1; i < train.length; i++) gaps.push(Math.max(1 / 365.25, (train[i].day - train[i - 1].day) / 365.25));
+    if (gaps.length >= 15) {
+      const fit = fitGammaMLE(gaps);
+      if (fit) {
+        const elapsed = (m.startDay - train[train.length - 1].day) / 365.25;
+        const F = (x) => gammaCDF(x, fit.k, fit.theta);
+        const surv = 1 - F(elapsed);
+        if (surv > 1e-9) m4 = clamp((F(elapsed + monthYears) - F(elapsed)) / surv);
+      }
+    }
+
     rows.push({
       y,
       M0: clamp(p(lambda)),
       M1: clamp(p(lambda * s)),
       M2: clamp(p(lambda * trendM * s)),
       M3: clamp(p(lambda * s) * (prevMonthHit ? Math.min(2, Math.max(0.5, clusterR)) : 1)),
+      M4: m4,
     });
   }
   return rows;
@@ -168,14 +188,14 @@ for (const t of TARGETS) {
   const rows = runTarget(t);
   const out = { n: rows.length, hits: rows.reduce((s, r) => s + r.y, 0) };
   const s0 = score(rows, 'M0');
-  for (const k of ['M0', 'M1', 'M2', 'M3']) {
+  for (const k of ['M0', 'M1', 'M2', 'M3', 'M4']) {
     const s = score(rows, k);
     out[k] = { ...s, bss: 1 - s.brier / s0.brier };
   }
   out.calibrationM1 = calibration(rows, 'M1');
   results[t.name] = out;
   console.log(`\n${t.name}  (n=${out.n} months, ${out.hits} with events)`);
-  for (const k of ['M0', 'M1', 'M2', 'M3']) {
+  for (const k of ['M0', 'M1', 'M2', 'M3', 'M4']) {
     console.log(`  ${k}: Brier ${out[k].brier.toFixed(4)}  log ${out[k].log.toFixed(4)}  BSS ${out[k].bss >= 0 ? '+' : ''}${(out[k].bss * 100).toFixed(2)}%`);
   }
   console.log('  calibration (M1): ' + out.calibrationM1.map((c) => `[${c.meanP.toFixed(2)}→${c.obs.toFixed(2)} n=${c.n}]`).join(' '));
