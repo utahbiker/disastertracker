@@ -2,8 +2,18 @@
 
 A static, dependency-free web app that answers questions like:
 
-> *"What's the probability of an M 7+ earthquake within 200 km of Draper, Utah in the next
-> 30 years?"* — with a defensible number, an honest uncertainty band, and the receipts.
+> *"What's the probability that some natural disaster kills 1,000+ people anywhere on Earth
+> in the next 6 months?"* — or *"an M 7+ earthquake within 200 km of Draper, Utah in the
+> next 30 years?"* — with defensible numbers, honest uncertainty bands, and the receipts.
+
+Two surfaces:
+
+- **Master dashboard** (`index.html`) — all natural hazards combined, filtered by impact
+  severity (death toll or CPI-adjusted economic damage), worldwide or US scope, with
+  per-hazard risk decomposition, seasonality, and frequency–severity curves. Built on
+  EM-DAT (13,571 physical events, 1900→2024).
+- **Earthquake deep-dive** (`earthquake.html`) — magnitude/location/time-window
+  probabilities on the instrumental seismic catalog (195k events, live USGS top-up).
 
 Pick a magnitude, pick anywhere on Earth (or a local disc around any point — click the map,
 choose a preset, or use device geolocation), and scrub forward in time to watch the cumulative
@@ -53,11 +63,15 @@ edge and a red banner says so.
 ## Layout
 
 ```
-  index.html            the app shell
-  app.js                UI, canvas charts, live USGS top-up
-  engine.js             ALL statistics — pure ESM, browser + Node, no dependencies
+  index.html            master multi-hazard dashboard
+  dashboard.js          dashboard UI (impact.js does the statistics)
+  impact.js             multi-hazard impact engine — pure ESM, no dependencies
+  earthquake.html       earthquake deep-dive shell
+  app.js                earthquake UI, canvas charts, live USGS top-up
+  engine.js             seismic statistics — pure ESM, browser + Node, no dependencies
   style.css
   data/
+    impacts.json               EM-DAT-derived physical-event impact catalog (1900→2024)
     catalog-modern.json        ComCat M4.5+ 2000→2024 + bridge (columnar, delta-encoded)
     catalog-instrumental.json  ISC-GEM Mw 1900–1999
     catalog-historical.json    NGDC significant events 10 AD–1899 (context display only)
@@ -71,7 +85,7 @@ edge and a red banner says so.
 ## Tests
 
 ```bash
-node --test test/engine.test.mjs
+node --test test/engine.test.mjs test/impact.test.mjs
 ```
 
 Pins χ²/Γ/digamma special functions to table values, recovers known parameters from synthetic
@@ -116,15 +130,29 @@ Apply the SQL through your project's migration tooling, then:
 SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node db/import-catalog.mjs
 ```
 
-## Roadmap — other hazards
+## Refreshing the impact catalog (EM-DAT)
 
-Same discipline per hazard, each with its own completeness story:
+The dashboard's impact data is a fixed EM-DAT snapshot (through 2024-02). To refresh —
+and to hold your own license copy — register at [public.emdat.be](https://public.emdat.be)
+(free, non-commercial), download the public table (xlsx → export csv), then:
+
+```bash
+node etl/build-impacts.mjs --emdat /path/to/emdat_export.csv --out data
+node --test test/impact.test.mjs   # re-verify the benchmarks
+```
+
+Attribution required: EM-DAT, CRED / UCLouvain, Brussels, Belgium — www.emdat.be.
+
+## Roadmap — deep dives
+
+The dashboard already covers all physical hazards at the impact level. Per-hazard
+deep-dives (like the earthquake page) each need their own physical catalog:
 
 | Hazard | Planned source | Statistical object |
 |---|---|---|
 | Hurricanes / tropical cyclones | NOAA HURDAT2 (1851→) + IBTrACS | Saffir–Simpson exceedance per coastal segment |
 | Tornadoes | NOAA/SPC severe weather DB (1950→) | EF-scale exceedance per region (big reporting-completeness correction needed) |
-| Floods | USGS streamgauge annual peaks + NOAA Storm Events | annual exceedance probability per basin |
+| Floods | USGS streamgauge annual peaks + NOAA Storm Events | annual exceedance probability per basin; also the US impact enrichment source |
 | Volcanoes | Smithsonian Global Volcanism Program | per-volcano VEI exceedance from Holocene records |
 
 ## What this is not
