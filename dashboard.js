@@ -1,5 +1,7 @@
-// dashboard.js — master multi-hazard dashboard. Statistics live in impact.js.
+// dashboard.js — master multi-hazard dashboard. Statistics live in impact.js
+// (modern impacts) and deep.js (deep-history extremes).
 import * as I from './impact.js';
+import * as D from './deep.js';
 
 const $ = (id) => document.getElementById(id);
 const fmtPct = (p) => {
@@ -65,8 +67,12 @@ const state = {
 };
 
 async function init() {
-  const raw = await (await fetch('data/impacts.json')).json();
+  const [raw, deepRaw] = await Promise.all([
+    (await fetch('data/impacts.json')).json(),
+    (await fetch('data/deep-history.json')).json(),
+  ]);
   state.imp = I.decodeImpacts(raw);
+  state.deep = deepRaw;
   $('data-status').innerHTML = `${fmtInt(raw.n)} recorded disaster events, 1900 → ${raw.meta.dataEnd} · impact catalog is a fixed EM-DAT snapshot (see caveats) · <a href="earthquake.html" style="color:var(--accent-2)">earthquake deep-dive is live-updating →</a>`;
   wireControls();
   readHash();
@@ -96,7 +102,51 @@ function renderAll() {
   drawFS();
   drawSeason(a);
   renderEvents(a);
+  renderExtremes();
+  renderGiants();
   writeHash();
+}
+
+function renderExtremes() {
+  if (!state.deep) return;
+  const x = D.assessExtremes(state.deep, state.windowYears);
+  $('extreme-cards').innerHTML = ['vei7', 'vei6', 'm85'].map((k) => {
+    const e = x[k];
+    const lastTxt = e.last
+      ? `last in record: <b>${e.last.name}</b> (${D.eraLabel(e.last.y)})`
+      : 'none in window';
+    return `<div class="extreme-card">
+      <div class="name">${e.label}</div>
+      <div class="xl">${fmtPct(e.prob)}</div>
+      <div class="sm">within ${fmtWindow(state.windowYears).slice(1)} · 95% CI ${fmtPct(e.probLo)}–${fmtPct(e.probHi)}</div>
+      <div class="sm">${e.n} events / ${fmtInt(e.Tyears)} yrs (${e.start} → ${e.end}) · ${fmtEvery(e.lambda)}</div>
+      <div class="sm">${lastTxt}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderGiants() {
+  if (!state.deep) return;
+  // modern non-earthquake catastrophes come from EM-DAT (NCEI is quake-only,
+  // so there is no overlap); deep quakes + VEI-7s come from the deep layer
+  const extra = [];
+  const imp = state.imp;
+  for (let i = 0; i < imp.n; i++) {
+    if (imp.deaths[i] >= 100000 && imp.meta.hazards[imp.type[i]] !== 'Earthquake') {
+      extra.push({
+        y: new Date(I.msOfDay(imp.day[i])).getUTCFullYear(),
+        kind: imp.meta.hazards[imp.type[i]],
+        name: imp.label[i] || '', detail: '', deaths: imp.deaths[i], source: 'EM-DAT',
+      });
+    }
+  }
+  const rows = D.documentedCatastrophes(state.deep, { minDeaths: 100000, extra });
+  $('giants-caption').textContent = `every documented event with ≥100,000 deaths, plus all VEI-7 eruptions · ${D.eraLabel(rows[0].y)} → present · pre-1900 tolls are documentary estimates`;
+  $('giants-list').innerHTML = rows.slice().reverse().map((r) => `
+    <div class="ev"><span class="d">${D.eraLabel(r.y)}</span>
+      <span class="m" style="color:${r.kind === 'Eruption' ? HAZ_COLORS[7] : r.kind === 'Earthquake' ? HAZ_COLORS[0] : HAZ_COLORS[3]}">${r.kind}</span>
+      <span>${r.name}${r.detail ? ` <span class="src">${r.detail}</span>` : ''} <span class="src">${r.source}</span></span>
+      <span class="val">${r.deaths ? fmtInt(r.deaths) + ' deaths' : '—'}</span></div>`).join('');
 }
 
 function renderHeadline(a) {

@@ -21,4 +21,4 @@ jobs:
           node-version: 22
       # 24 tests: special functions vs. table values, estimator recovery on
       # synthetic data, and the shipped catalog vs. published benchmarks.
-      - run: node --test test/engine.test.mjs
+      - run: node --test test/*.test.mjs
