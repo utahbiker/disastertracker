@@ -376,15 +376,40 @@ probabilities: a VEI-7 anywhere on Earth, not a death toll — impact depends
 entirely on where it happens (Tambora's toll came with a starving year worldwide;
 a repeat today would be a global agricultural event).
 
-## 16. Where the deep record must NOT feed rates — the completeness ramp
+## 16. Where the deep record must NOT feed rates — and why that is a finding, not an assumption
 
-Documented M ≥ 8.5 earthquakes per century: 1500s: 3 → 1600s: 6 → 1700s: 7 →
-1800s: 9 → 1900s: 11 (and the 2000s on a faster pace still). Seismicity did not
-quadruple; documentation did. The same ramp appears for ≥100,000-death
-earthquakes (~0.4/century pre-1900 vs ~5/century since 1900 — a mix of
-documentation and population growth). Any rate computed over the documentary era
-is therefore biased low, and any death toll from 1556 reflects 1556's
-buildings and population. Consequently:
+Documented M ≥ 8.5 earthquakes per century climb 3 → 6 → 7 → 9 → 11 from the
+1500s to the 1900s. Two hypotheses fit that curve: better record-keeping, or
+genuinely increasing seismicity. We do not assume the answer — we test it
+against the data (both analyses run in `test/deep.test.mjs` on every build):
+
+**Stationarity inside the constant-detection era.** Since ~1918, detection of
+M ≥ 7 events is complete and unchanging, so any real secular increase must
+show there. Raw decade counts wiggle upward slightly, but earthquake counts
+are clustered (aftershocks; the measured inter-event CV > 1 of § 3.2), which
+inflates variance and mimics trends. After Gardner–Knopoff-style
+declustering (drop events within 1.5 yr and 300 km after a larger shock),
+the 1920s–2010s decade counts are 108, 113, 120, 86, 113, 127, 93, 120, 118,
+128: homogeneity χ² = 15.1 (df = 9, below the 16.9 five-percent cutoff) and
+trend z = 1.3 — statistically flat. This reproduces Shearer & Stark (2012),
+who posed exactly this question after the 2004–2011 cluster of great quakes.
+
+**The size of the documentary undercount.** Over 1500–1899 the documentary
+record captures ~22 M ≥ 7.5 events per century; instruments record 124–184
+per century — roughly one event in six was written down, with remote and
+oceanic earthquakes the largest missing class. For rising seismicity to
+explain the ramp instead, rates would have had to jump ~6× precisely when
+seismometers were deployed and then hold flat for the 120 years since — which
+the stationarity test above rules out.
+
+The honest limit of the claim: "no trend across a century of constant
+measurement" is not proof of stationarity over millennia; it is the strongest
+statement the data permit, and the model needs nothing stronger — every rate
+is computed inside a constant-detection window, so no assumption about the
+documentary era enters the numbers at all. Death tolls face the additional,
+untestable-by-us confound that a toll from 1556 reflects 1556's buildings and
+population (~0.4 ≥100k-death quakes/century documented pre-1900 vs ~5/century
+since — documentation and population growth compounded). Consequently:
 
 - occurrence windows for earthquakes stay instrumental;
 - the dashboard's death/damage probability windows stay at Part II's 1900+
@@ -401,5 +426,6 @@ source.
 
 - Brown, S. K., et al. (2014). Characterisation of the Quaternary eruption record: the LaMEVE database. *J. Applied Volcanology* 3:5.
 - Newhall, C. G., & Self, S. (1982). The Volcanic Explosivity Index (VEI). *JGR* 87.
+- Shearer, P. M., & Stark, P. B. (2012). Global risk of big earthquakes has not recently increased. *PNAS* 109(3).
 - Rougier, J., et al. (2018). The global magnitude–frequency relationship for large explosive volcanic eruptions. *EPSL* 482.
 - National Geophysical Data Center / World Data Service: NCEI/WDS Global Significant Earthquake Database. NOAA. doi:10.7289/V5TD9V7K
