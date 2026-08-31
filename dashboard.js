@@ -75,7 +75,7 @@ async function init() {
   ]);
   state.imp = I.decodeImpacts(raw);
   state.deep = deepRaw;
-  $('data-status').innerHTML = `${fmtInt(raw.n)} recorded disaster events, 1900 → ${raw.meta.dataEnd} · impact catalog is a fixed EM-DAT snapshot (see caveats) · <a href="earthquake.html" style="color:var(--accent-2)">earthquake deep-dive is live-updating →</a>`;
+  $('data-status').innerHTML = `${fmtInt(raw.n)} impact events (EM-DAT, 1900 → ${raw.meta.dataEnd}) + deep-history records to 2150 BC (NCEI quakes) and the early Holocene (Smithsonian GVP eruptions) · impact catalog is a fixed snapshot (see caveats) · <a href="earthquake.html" style="color:var(--accent-2)">earthquake deep-dive is live-updating →</a>`;
   wireControls();
   readHash();
   renderAll();
