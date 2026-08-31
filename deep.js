@@ -60,12 +60,12 @@ export function documentedCatastrophes(deep, { minDeaths = 100000, extra = [] } 
   const rows = [];
   for (const q of deep.quakes) {
     if (q.deaths !== null && q.deaths >= minDeaths) {
-      rows.push({ y: q.y, kind: 'Earthquake', name: q.name, detail: q.mag ? `M ${q.mag.toFixed(1)}${q.tsu ? ' + tsunami' : ''}` : (q.tsu ? 'tsunami' : ''), deaths: q.deaths, source: 'NCEI' });
+      rows.push({ y: q.y, kind: 'Earthquake', name: q.name, detail: q.mag ? `M ${q.mag.toFixed(1)}${q.tsu ? ' + tsunami' : ''}` : (q.tsu ? 'tsunami' : ''), deaths: q.deaths, source: 'NCEI', mag: q.mag, tsu: q.tsu });
     }
   }
   for (const e of deep.eruptions) {
     if (e.vei >= 7) {
-      rows.push({ y: e.y, kind: 'Eruption', name: e.name, detail: `VEI ${e.vei}`, deaths: null, source: 'GVP' });
+      rows.push({ y: e.y, kind: 'Eruption', name: e.name, detail: `VEI ${e.vei}`, deaths: null, source: 'GVP', vei: e.vei });
     }
   }
   rows.push(...extra);

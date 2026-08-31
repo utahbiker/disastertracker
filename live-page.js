@@ -24,11 +24,12 @@ function renderList(events) {
   box.innerHTML = events.map((e, i) => `
     <div class="globe-row" data-i="${i}">
       <span class="globe-dot" style="background:${e.color.replace('ALPHA', '1')}"></span>
-      <span class="globe-row-main">${e.icon} <b>${e.title}</b><br>
+      <span class="globe-row-main">${e.icon} <b>${e.title}</b>${e.url ? ` <a class="globe-src-link" href="${e.url}" target="_blank" rel="noopener" title="Open source report">↗</a>` : ''}<br>
         <span class="sm subtle">${e.detail ? e.detail + ' · ' : ''}${ago(e.timeMs)}</span></span>
     </div>`).join('');
   for (const row of box.querySelectorAll('.globe-row')) {
-    row.addEventListener('click', () => {
+    row.addEventListener('click', (ev) => {
+      if (ev.target.closest('a')) return; // source link, not a select
       const i = Number(row.dataset.i);
       globe.select(i);
       highlight(i);

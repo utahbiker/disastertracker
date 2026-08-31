@@ -295,6 +295,14 @@ Transformations (see `etl/build-impacts.mjs`):
 - **US scope** keeps each event's US-portion impacts (ISO USA + PRI, VIR, GUM,
   ASM, MNP — Hurricane Maria's Puerto Rico toll belongs to US mode).
 - **Damages** use EM-DAT's CPI-adjusted series (≈ 2024 US$).
+- **Detail sidecar** (`data/impact-details.json`): for every labeled event
+  (deaths ≥ 1,000 or damage ≥ $10B) the ETL also emits narrative-level
+  structured detail — date range and duration, disaster subtype and
+  associated hazards, physical magnitude and scale, location text,
+  injured/affected/homeless, insured damage, declaration/appeal flags,
+  and the per-country impact breakdown for multi-country events. This is
+  display-only (the popup a named event opens); the probability model
+  reads none of it.
 
 ## 9. Completeness windows (impact thresholds)
 
