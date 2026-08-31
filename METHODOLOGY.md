@@ -516,3 +516,98 @@ becomes the headline at thresholds whose baseline monthly probability is
 below 50%. The advantage is also sensitive to the evaluation range (present
 on 2010–2024, absent on 2012–2024) — additional evidence that it is a weak
 signal requiring out-of-sample confirmation before it may drive the headline.
+
+---
+
+# Part V — Extreme-value severity tail
+
+Above a certain severity the empirical staircase runs out of steps: eight
+events ≥ 1M deaths in the record, one damage event near $200B, none above
+~$275B. A Garwood interval on 8 counts spans a factor of ~3; on 0 counts it
+says only "less than 3.7 per window." Counting is the wrong estimator there.
+Extreme-value theory supplies the right one.
+
+## 21. The model
+
+**Shape.** By the Pickands–Balkema–de Haan theorem, excesses over a high
+threshold converge to the generalized Pareto distribution (GPD),
+S(z) = (1 + ξz/β)^(−1/ξ). The shape ξ and scale β are fitted by profile
+maximum likelihood (grid over ξ, golden-section over β) on the exceedances
+of a fixed **anchor**: deaths ≥ 1,000 (307 exceedances, window 1930→) and
+damage ≥ $1B adjusted (738 exceedances, window 1990→). A fit is refused
+below 40 exceedances — which is why **US deaths carry no tail model** and
+sparse US thresholds still honestly display "too rare to rate."
+
+Fitted shapes: deaths ξ ≈ 1.5, damage ξ ≈ 0.8 — both heavy-tailed, deaths
+so heavy the theoretical mean is infinite, consistent with the published
+literature on disaster loss distributions (e.g. Coles 2001; Clauset et al.
+2009 on heavy tails in fatality data).
+
+**Level and switch point.** The fitted GPD is *not* extrapolated from the
+anchor across three orders of magnitude. Within each completeness window the
+model switches from counting to the tail at a fixed point **x\*** — the
+severity of the window's **10th-largest event** — and re-anchors the GPD
+there using threshold stability (excesses over x\* of a GPD(ξ, β) are
+GPD(ξ, β + ξ(x\* − u))), with the level tied to the window's own empirical
+rate at x\*:
+
+    λ(≥x) = (n*/T) · S(x − x*; ξ, β + ξ(x* − u))    for x ≥ x*
+
+Because λ(x\*) equals the empirical rate exactly, the hand-off from the
+staircase to the smooth curve is **continuous by construction**, and both
+pieces are non-increasing, so the exceedance curve is monotone — including
+beyond the largest event on record, where the number is a model statement,
+not an observation (the caveat panel says so). Below x\* the model remains
+purely empirical; the tail changes nothing at any backtest-validated
+threshold. Seasonal and trend multipliers apply identically on both sides
+of x\*. Headline uncertainty in the tail zone is widened to at least
+[λ/3, 3λ], dominating the (no-longer-meaningful) count interval.
+
+## 22. Coherence across completeness windows
+
+P(≥x) can never rise as x rises — any valid rate estimate at a higher
+threshold is a lower bound for every lower threshold. Two seams in a
+piecewise model can violate this ordering:
+
+1. **Trend gating.** The Poisson log-linear trend (Part IV) is fitted once
+   per completeness window on the window's *base* threshold — the dense
+   regime the backtest validated — and applied uniformly to every threshold
+   sharing that window. (A per-threshold fit would switch on and off across
+   a sample-size gate as the slider moves, producing visible probability
+   inversions; a single per-window multiplier on a monotone family of rates
+   cannot.)
+2. **Window boundaries.** At a window base (e.g. deaths 1,000, where the
+   1930→ record opens) the longer window can show a *higher* rate for the
+   rarer event than the recent, trend-adjusted window shows just below it.
+   That gap is real non-stationarity — the same decline the trend model
+   measures. The resolution is an **exceedance-coherence floor**: every
+   threshold's rate is floored by the model's own assessment at the next
+   window base above it (recursively; a no-op at the bases themselves, so
+   no validated headline changes). When the floor binds, the headline panel
+   says so.
+
+Both constraints are enforced by a test that sweeps ~400 log-spaced
+thresholds across every metric × scope combination and asserts monotone
+probabilities across every seam.
+
+## 23. Validation (Part V)
+
+- **Estimator recovery:** synthetic GPD samples with known (ξ, β) at three
+  tail weights; the fitted survival function must match truth within ×2 at
+  the 90th–99.9th percentiles (ξ and β individually are strongly
+  correlated in the likelihood, so the survival function is the invariant
+  that matters — and the one the model consumes).
+- **Hold-out:** the deaths tail fitted only on 1930–1999 predicts the
+  expected number of ≥500,000-death events in 2000–2024; the observed count
+  (zero — the largest were ~220–230k) must be statistically consistent with
+  the prediction under Poisson, in both directions (no over-prediction
+  beyond the 99.5% level, no degenerate under-prediction).
+- **Continuity and monotonicity:** asserted directly (§ 22).
+- **Refusal:** US deaths must return no tail model.
+
+## 24. References (Part V)
+
+- Pickands, J. (1975). Statistical inference using extreme order statistics. *Ann. Statist.* 3, 119–131.
+- Balkema, A. & de Haan, L. (1974). Residual life time at great age. *Ann. Probab.* 2, 792–804.
+- Coles, S. (2001). *An Introduction to Statistical Modeling of Extreme Values.* Springer.
+- Clauset, A., Shalizi, C. & Newman, M. (2009). Power-law distributions in empirical data. *SIAM Review* 51(4), 661–703.

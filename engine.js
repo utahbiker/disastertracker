@@ -571,3 +571,50 @@ function referenceThreshold(cat, completeness, nowMin, indices) {
   }
   return best;
 }
+
+// ─── generalized Pareto tail (peaks-over-threshold EVT) ──────────────────
+
+/**
+ * Profile-MLE fit of the generalized Pareto distribution to exceedances
+ * z = x − u > 0: survival S(z) = (1 + ξ z / β)^(−1/ξ)  (ξ > 0 heavy tail).
+ * Grid over shape ξ, golden-section over scale β at each ξ. Requires ≥ 40
+ * exceedances for an honest fit (Coles 2001).
+ */
+export function fitGPD(excesses) {
+  const z = excesses.filter((v) => v > 0);
+  const n = z.length;
+  if (n < 40) return null;
+  const mean = z.reduce((a, b) => a + b, 0) / n;
+  const logL = (xi, beta) => {
+    let ll = -n * Math.log(beta);
+    for (const v of z) {
+      const t = 1 + xi * v / beta;
+      if (t <= 0) return -Infinity;
+      ll -= (1 + 1 / xi) * Math.log(t);
+    }
+    return ll;
+  };
+  let best = null;
+  for (let xi = 0.02; xi <= 1.5; xi += 0.02) {
+    // golden-section maximize over beta ∈ [mean/50, mean*50] (log scale)
+    let lo = Math.log(mean / 50), hi = Math.log(mean * 50);
+    const phi = (Math.sqrt(5) - 1) / 2;
+    let c = hi - phi * (hi - lo), d = lo + phi * (hi - lo);
+    let fc = logL(xi, Math.exp(c)), fd = logL(xi, Math.exp(d));
+    for (let i = 0; i < 60; i++) {
+      if (fc > fd) { hi = d; d = c; fd = fc; c = hi - phi * (hi - lo); fc = logL(xi, Math.exp(c)); }
+      else { lo = c; c = d; fc = fd; d = lo + phi * (hi - lo); fd = logL(xi, Math.exp(d)); }
+    }
+    const beta = Math.exp((lo + hi) / 2);
+    const ll = logL(xi, beta);
+    if (!best || ll > best.logL) best = { xi, beta, logL: ll, n };
+  }
+  return best;
+}
+
+/** GPD survival fraction for an excess z ≥ 0 over the anchor. */
+export function gpdSurvival(z, xi, beta) {
+  if (z <= 0) return 1;
+  const t = 1 + xi * z / beta;
+  return t <= 0 ? 0 : Math.pow(t, -1 / xi);
+}

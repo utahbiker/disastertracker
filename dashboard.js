@@ -180,7 +180,7 @@ function renderGiants() {
 }
 
 function renderHeadline(a) {
-  if (!a || a.n === 0) {
+  if (!a || (a.n === 0 && a.method !== 'evt-tail')) {
     $('prob-main').textContent = '—';
     $('prob-sub').innerHTML = `No event ${severityText()} ${scopeText()} appears in the applicable record — too rare to rate empirically. Lower the severity or widen the scope.`;
     $('prob-ci').textContent = ''; $('prob-facts').innerHTML = '';
@@ -195,6 +195,13 @@ function renderHeadline(a) {
 
   const facts = [];
   facts.push(`<div class="fact"><b>${fmtInt(a.n)}</b> such events in the ${a.Tyears.toFixed(0)}-year complete record <span class="sm">(${a.windowStartYear} → ${state.imp.meta.dataEnd.slice(0, 4)})</span></div>`);
+  if (a.method === 'evt-tail') {
+    const fmtV = (v) => (state.metric === 'deaths' ? fmtInt(v) + ' deaths' : fmtDamage(v));
+    facts.push(`<div class="fact"><span class="sm">method: extreme-value tail model — only ${a.n} events this large exist to count directly, so the rate extends the severity tail's shape (generalized Pareto ξ=${a.tail.xi.toFixed(2)}, fitted on the ${fmtInt(a.tail.fitN)} events ≥ ${fmtV(a.tail.fitU)}) beyond the record's ${fmtInt(a.tail.nAnchor)} largest events (≥ ${fmtV(a.tail.u)})</span></div>`);
+  }
+  if (a.cohered) {
+    facts.push('<div class="fact"><span class="sm">coherence floor applied: the longer record available at the next-higher severity class already implies at least this rate, so this threshold inherits it (a probability can never rise as the threshold rises)</span></div>');
+  }
   if (a.lastIdx != null) {
     const i = a.lastIdx;
     const imp = state.imp;
@@ -232,6 +239,9 @@ function renderCaveats(a) {
   items.push('<li><b>Non-stationarity, both directions:</b> disaster <i>mortality</i> has fallen for decades (warning systems, preparedness) while <i>damages</i> rise (exposure growth) — so death-based rates lean conservative-high at extreme thresholds dominated by early-century famines and floods, and damage-based rates lean low. The completeness windows limit but do not remove this.</li>');
   if (state.metric === 'deaths' && a && a.threshold >= 100000) {
     items.push('<li><b>At this severity the record is thin</b> and dominated by pre-1970 droughts and floods whose death tolls reflect a world without modern response capacity. Treat the number as an upper-leaning bound.</li>');
+  }
+  if (a && a.method === 'evt-tail') {
+    items.push('<li><b>Tail-model estimate:</b> too few events this large exist for direct counting, so the rate comes from the severity tail\'s generalized Pareto shape (peaks-over-threshold EVT, Coles 2001 — the standard tool for rare-extreme rates), fitted on hundreds of large events and re-anchored at the record\'s 10 largest so it joins the empirical rate seamlessly. The uncertainty band is widened accordingly, and beyond the largest observed event the number is a model statement, not an observation.</li>');
   }
   if (state.metric === 'damage') {
     items.push('<li><b>Damage reporting is sparse and biased:</b> only ~40% of events carry damage estimates, skewed toward insured, wealthy regions. Damage rates are lower bounds; the CPI adjustment corrects prices but not exposure growth.</li>');
