@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Happening Now — Disaster Probability Tracker</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌍</text></svg>">
+</head>
+<body>
+<header>
+  <h1>Disaster Probability Tracker <span class="ver" id="app-version"></span></h1>
+  <p class="tagline">Live situational awareness from open feeds — refreshed while you're here. Never part of the statistics.</p>
+  <nav id="hazard-tabs">
+    <a class="tab" href="index.html">Overview</a>
+    <span class="tab active">Happening now</span>
+    <a class="tab" href="earthquake.html">Earthquake deep-dive</a>
+  </nav>
+</header>
+
+<main>
+  <section id="status-bar">
+    <span id="data-status">Connecting to live feeds…</span>
+  </section>
+
+  <section class="card">
+    <h3>The last 20 major events <span class="subtle">drag the globe · click a ping or a row · auto-rotates when idle</span></h3>
+    <div class="globe-wrap">
+      <div class="globe-box"><canvas id="globe"></canvas></div>
+      <div id="globe-list" class="globe-list"></div>
+    </div>
+    <p class="hint">What qualifies as major (thresholds, not vibes): <b>earthquakes M ≥ 5.9</b> —
+    193/yr globally from this site's own catalog, one every ~1.9 days, so twenty events span
+    roughly a month; anything smaller would bury the map in noise. <b>All other hazards at
+    GDACS orange or red alert</b> — GDACS's alert score is calibrated to expected humanitarian
+    impact, the right severity scale for storms, floods, volcanoes and wildfires. Green alerts
+    are excluded. See METHODOLOGY § 12b.</p>
+  </section>
+
+  <section class="card">
+    <h3>Live pulse</h3>
+    <div class="live-grid">
+      <div id="live-pulse" class="live-col"><span class="sm live-wait">Checking global seismicity…</span></div>
+      <div id="live-alerts" class="live-col"><span class="sm live-wait">Checking disaster alerts…</span></div>
+    </div>
+    <p class="hint" id="live-status"></p>
+  </section>
+
+  <section class="card caveats">
+    <h3>What this page is — and is not</h3>
+    <ul>
+      <li><b>Situational awareness, not statistics.</b> This page shows what open live feeds report right now. Nothing here feeds the probability model — the <a href="index.html" style="color:var(--accent-2)">Overview</a> statistics come only from the validated historical record (METHODOLOGY § 12b documents the separation).</li>
+      <li><b>Sources:</b> USGS FDSN (earthquakes, public domain) and GDACS (EC/UN alert levels), with ReliefWeb as automatic fallback. Each feed degrades independently — an unreachable source shows a status line and nothing else changes.</li>
+      <li><b>Globe geography:</b> Natural Earth 110m coastlines (public domain).</li>
+    </ul>
+  </section>
+</main>
+
+<footer>
+  <p>Live data: USGS/ANSS, GDACS (EC/JRC), ReliefWeb (UN OCHA). Coastlines: Natural Earth (public domain).
+  Probabilities on the Overview describe long-run statistical frequency, not deterministic forecasts.</p>
+</footer>
+
+<script type="module" src="live-page.js"></script>
+</body>
+</html>
