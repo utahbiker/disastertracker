@@ -122,3 +122,26 @@ test('exceedance curve is monotonically non-increasing in threshold', () => {
     assert.ok(curve[i].lambda <= curve[i - 1].lambda + 1e-9);
   }
 });
+
+// ─── trend model (validated by backtest/backtest.mjs — see METHODOLOGY IV) ──
+
+test('poissonTrendMultiplier: flat data gates off, strong trend engages, caps hold', () => {
+  const flat = Array.from({ length: 30 }, (_, i) => 20 + (i % 3)); // no trend
+  assert.equal(I.poissonTrendMultiplier(flat, 1990, 2026), 1);
+  const rising = Array.from({ length: 30 }, (_, i) => Math.round(5 * Math.exp(0.05 * i)));
+  const up = I.poissonTrendMultiplier(rising, 1990, 2026);
+  assert.ok(up > 1 && up <= 3, `up=${up}`);
+  const falling = rising.slice().reverse();
+  const down = I.poissonTrendMultiplier(falling, 1990, 2026);
+  assert.ok(down < 1 && down >= 1 / 3, `down=${down}`);
+  assert.equal(I.poissonTrendMultiplier([1, 2, 3], 2020, 2026), 1); // too short
+});
+
+test('assessImpact exposes the trend factor and applies it to probabilities', () => {
+  const a = I.assessImpact(imp, { metric: 'deaths', threshold: 100, windowYears: 1, nowMs: NOW });
+  assert.ok(Number.isFinite(a.trend) && a.trend > 1 / 3 && a.trend <= 3, `trend=${a.trend}`);
+  // deaths≥100 declines over 1990→2024 (the backtest's headline finding)
+  assert.ok(a.trend < 1, `expected declining trend, got ${a.trend}`);
+  // raw lambda stays the window empirical rate — trend touches probabilities only
+  assert.ok(a.lambda > 18 && a.lambda < 30);
+});

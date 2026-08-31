@@ -162,7 +162,8 @@ function renderHeadline(a) {
   $('prob-main').textContent = fmtPct(a.prob);
   $('prob-sub').innerHTML = `chance of at least one natural disaster ${severityText()}<br>${scopeText()}, between today and <b>${endDate}</b> (${fmtWindow(a.windowYears).slice(1)})`;
   $('prob-ci').textContent = `95% interval ${fmtPct(a.probLo)} – ${fmtPct(a.probHi)} · rate ${a.lambda >= 0.1 ? a.lambda.toFixed(1) : a.lambda.toFixed(3)}/yr (${fmtEvery(a.lambda)})` +
-    (Math.abs(a.seasonalNet - 1) > 0.05 && a.windowYears < 2 ? ` · seasonal ×${a.seasonalNet.toFixed(2)}` : '');
+    (Math.abs(a.seasonalNet - 1) > 0.05 && a.windowYears < 2 ? ` · seasonal ×${a.seasonalNet.toFixed(2)}` : '') +
+    (Math.abs(a.trend - 1) > 0.05 ? ` · trend ×${a.trend.toFixed(2)}` : '');
 
   const facts = [];
   facts.push(`<div class="fact"><b>${fmtInt(a.n)}</b> such events in the ${a.Tyears.toFixed(0)}-year complete record <span class="sm">(${a.windowStartYear} → ${state.imp.meta.dataEnd.slice(0, 4)})</span></div>`);
@@ -207,6 +208,7 @@ function renderCaveats(a) {
   if (state.metric === 'damage') {
     items.push('<li><b>Damage reporting is sparse and biased:</b> only ~40% of events carry damage estimates, skewed toward insured, wealthy regions. Damage rates are lower bounds; the CPI adjustment corrects prices but not exposure growth.</li>');
   }
+  if (a && Math.abs(a.trend - 1) > 0.05) items.push(`<li><b>Trend-adjusted rate:</b> the frequency of events at this severity shows a statistically significant ${a.trend < 1 ? 'decline' : 'rise'} across the observation window, so the forecast rate is the fitted trend evaluated at today (×${a.trend.toFixed(2)} vs the flat average) — a configuration that scored +7.7% Brier skill in walk-forward backtesting (METHODOLOGY Part IV). The adjustment is significance-gated, capped at 3×, and never projected more than 3 years past the data.</li>`);
   items.push('<li><b>Epidemics are excluded</b> (this dashboard models physical hazards). EM-DAT entry requires ≥10 deaths, ≥100 affected, or a declaration/appeal — small events are undercounted, which is why low thresholds use only the modern record.</li>');
   if (state.us) items.push('<li><b>US scope</b> counts each event\'s US-portion impact (incl. Puerto Rico and territories). Sub-national US enrichment (NOAA Storm Events) is on the roadmap.</li>');
   items.push('<li><b>Attribution:</b> impact data from EM-DAT, CRED / UCLouvain, Brussels, Belgium — www.emdat.be (non-commercial use).</li>');

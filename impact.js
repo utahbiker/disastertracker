@@ -14,6 +14,53 @@
 
 import { poissonRateCI, poissonProb } from './engine.js';
 
+/**
+ * Poisson log-linear trend fit on annual counts (IRLS): log mu_y = a + b*x.
+ * Returns the multiplier that converts the window-average rate into the
+ * trend-evaluated rate at `forecastYear`, with three guards that were part
+ * of the validated (backtested) configuration:
+ *   - the trend is used only when its slope is significant (|z| >= 2);
+ *   - the projection year is capped at lastTrainingYear + 3;
+ *   - the multiplier is clamped to [1/3, 3].
+ * Walk-forward validation (backtest/backtest.mjs): +7.7% Brier skill vs the
+ * flat rate at deaths>=100, neutral elsewhere (gate closes). See
+ * METHODOLOGY Part IV.
+ */
+export function poissonTrendMultiplier(annualCounts, startYear, forecastYear) {
+  const years = annualCounts.length;
+  if (years < 15) return 1;
+  const mid = (startYear + forecastYear) / 2;
+  const x = annualCounts.map((_, k) => startYear + k - mid);
+  let a = Math.log(Math.max(1e-6, annualCounts.reduce((s, c) => s + c, 0) / years)), b = 0;
+  for (let it = 0; it < 25; it++) {
+    let g0 = 0, g1 = 0, h00 = 0, h01 = 0, h11 = 0;
+    for (let k = 0; k < years; k++) {
+      const mu = Math.exp(a + b * x[k]);
+      g0 += annualCounts[k] - mu; g1 += (annualCounts[k] - mu) * x[k];
+      h00 += mu; h01 += mu * x[k]; h11 += mu * x[k] * x[k];
+    }
+    const det = h00 * h11 - h01 * h01;
+    if (Math.abs(det) < 1e-12) break;
+    const da = (g0 * h11 - g1 * h01) / det, db = (g1 * h00 - g0 * h01) / det;
+    a += da; b += db;
+    if (Math.abs(da) + Math.abs(db) < 1e-10) break;
+  }
+  let h00 = 0, h01 = 0, h11 = 0;
+  for (let k = 0; k < years; k++) {
+    const mu = Math.exp(a + b * x[k]);
+    h00 += mu; h01 += mu * x[k]; h11 += mu * x[k] * x[k];
+  }
+  const det = h00 * h11 - h01 * h01;
+  if (det <= 0) return 1;
+  const seB = Math.sqrt(h00 / det);
+  if (!Number.isFinite(seB) || Math.abs(b / seB) < 2) return 1;
+  const lastTrain = startYear + years - 1;
+  const xf = Math.min(forecastYear, lastTrain + 3) - mid;
+  const flat = annualCounts.reduce((s, c) => s + c, 0) / years;
+  const mult = Math.exp(a + b * xf) / Math.max(1e-9, flat);
+  return Math.min(3, Math.max(1 / 3, mult));
+}
+
 export const DAY_MS = 86400000;
 export const EPOCH_1900_MS = Date.UTC(1900, 0, 1);
 export const dayOfMs = (ms) => (ms - EPOCH_1900_MS) / DAY_MS;
@@ -128,6 +175,23 @@ export function assessImpact(imp, { metric, threshold, windowYears, us = false, 
     qualifying.push(i);
   }
 
+  // trend multiplier — fitted on the aggregate annual counts of qualifying
+  // events (the exact configuration validated by the walk-forward backtest),
+  // applied uniformly so the per-hazard decomposition stays consistent
+  const startCalYear = startYear;
+  const nowYear = new Date(nowMs).getUTCFullYear();
+  const lastDataYear = new Date(msOfDay(endDay)).getUTCFullYear() - 1; // last complete year
+  let trend = 1;
+  if (lastDataYear - startCalYear + 1 >= 15) {
+    const annual = [];
+    for (let y = startCalYear; y <= lastDataYear; y++) annual.push(0);
+    for (const i of qualifying) {
+      const y = new Date(msOfDay(imp.day[i])).getUTCFullYear();
+      if (y >= startCalYear && y <= lastDataYear) annual[y - startCalYear]++;
+    }
+    trend = poissonTrendMultiplier(annual, startCalYear, nowYear);
+  }
+
   // floor for the seasonal climatology: a level with enough events for a
   // stable monthly signal, never above the requested threshold's own scale
   const floor = metric === 'deaths' ? Math.min(threshold, 10) : Math.min(threshold, 1e5);
@@ -139,27 +203,28 @@ export function assessImpact(imp, { metric, threshold, windowYears, us = false, 
     const profile = monthlyProfile(imp, { metric, us, type: h, floor });
     const s = seasonalFactor(profile, nowMs, windowYears);
     lambdaTotal += lambda;
-    lambdaEffTotal += lambda * s;
+    lambdaEffTotal += lambda * s * trend;
     perHazard.push({
       hazard: imp.meta.hazards[h], type: h, n: counts[h], lambda,
       ci95: poissonRateCI(counts[h], Tyears, 0.95),
       seasonal: s,
-      prob: poissonProb(lambda * s, windowYears),
+      prob: poissonProb(lambda * s * trend, windowYears),
       lastIdx: lastIdx[h] >= 0 ? lastIdx[h] : null,
     });
   }
-  for (const ph of perHazard) ph.share = lambdaEffTotal > 0 ? (ph.lambda * ph.seasonal) / lambdaEffTotal : 0;
+  for (const ph of perHazard) ph.share = lambdaEffTotal > 0 ? (ph.lambda * ph.seasonal * trend) / lambdaEffTotal : 0;
 
   const ciTotal = poissonRateCI(total, Tyears, 0.95);
-  const seasonalNet = lambdaTotal > 0 ? lambdaEffTotal / lambdaTotal : 1;
+  const seasonalNet = lambdaTotal > 0 ? lambdaEffTotal / (lambdaTotal * trend) : 1;
   return {
+    trend,
     metric, threshold, windowYears, us,
     windowStartYear: startYear, Tyears, n: total,
     lambda: lambdaTotal, lambdaEff: lambdaEffTotal, ci95: ciTotal,
     seasonalNet,
     prob: poissonProb(lambdaEffTotal, windowYears),
-    probLo: poissonProb(ciTotal.lo * seasonalNet, windowYears),
-    probHi: poissonProb(ciTotal.hi * seasonalNet, windowYears),
+    probLo: poissonProb(ciTotal.lo * seasonalNet * trend, windowYears),
+    probHi: poissonProb(ciTotal.hi * seasonalNet * trend, windowYears),
     perHazard: perHazard.sort((a, b) => b.share - a.share),
     lastIdx: lastAny >= 0 ? lastAny : null,
     maxObserved: maxVal, maxIdx: maxVal > 0 ? maxIdx : null,
