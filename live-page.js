@@ -19,27 +19,42 @@ const ago = (ms) => {
 
 let globe = null;
 
+function detailHtml(e) {
+  const rows = (e.info ?? []).map(([k, v]) =>
+    `<div class="globe-det-row"><span class="globe-det-k">${k}</span><span>${v}</span></div>`).join('');
+  const links = (e.links ?? []).map((l) =>
+    `<a class="globe-det-link" href="${l.u}" target="_blank" rel="noopener">${l.t} ↗</a>`).join('');
+  return `<div class="globe-det">${rows}${links ? `<div class="globe-det-links">${links}</div>` : ''}</div>`;
+}
+
 function renderList(events) {
   const box = $('globe-list');
   box.innerHTML = events.map((e, i) => `
     <div class="globe-row" data-i="${i}">
       <span class="globe-dot" style="background:${e.color.replace('ALPHA', '1')}"></span>
-      <span class="globe-row-main">${e.icon} <b>${e.title}</b>${e.url ? ` <a class="globe-src-link" href="${e.url}" target="_blank" rel="noopener" title="Open source report">↗</a>` : ''}<br>
-        <span class="sm subtle">${e.detail ? e.detail + ' · ' : ''}${ago(e.timeMs)}</span></span>
+      <span class="globe-row-main">${e.icon} <b>${e.title}</b><br>
+        <span class="sm subtle">${e.detail ? e.detail + ' · ' : ''}${ago(e.timeMs)}</span>
+        ${detailHtml(e)}</span>
     </div>`).join('');
   for (const row of box.querySelectorAll('.globe-row')) {
     row.addEventListener('click', (ev) => {
-      if (ev.target.closest('a')) return; // source link, not a select
+      if (ev.target.closest('a')) return; // let links be links
       const i = Number(row.dataset.i);
       globe.select(i);
-      highlight(i);
+      highlight(i, true);
     });
   }
 }
 
-function highlight(i) {
+function highlight(i, expand = false) {
   const box = $('globe-list');
-  box.querySelectorAll('.globe-row').forEach((r) => r.classList.toggle('sel', Number(r.dataset.i) === i));
+  box.querySelectorAll('.globe-row').forEach((r) => {
+    const isSel = Number(r.dataset.i) === i;
+    r.classList.toggle('sel', isSel);
+    // clicking a row expands its detail (and re-clicking collapses);
+    // selection from a globe-ping click expands too
+    r.classList.toggle('open', isSel && (expand ? !r.classList.contains('open') : r.classList.contains('open')));
+  });
   const el = box.querySelector(`.globe-row[data-i="${i}"]`);
   if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
@@ -118,7 +133,7 @@ async function refreshAll() {
 async function init() {
   $('app-version').textContent = VERSION;
   const world = await (await fetch('data/world-outline.json')).json();
-  globe = new Globe($('globe'), world, { onSelect: highlight });
+  globe = new Globe($('globe'), world, { onSelect: (i) => highlight(i, true) });
   refreshAll();
   setInterval(refreshAll, REFRESH_MS);
 }

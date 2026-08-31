@@ -217,3 +217,12 @@ footer a { color: var(--accent-2); }
 .det-link:hover { color: #fff; }
 .globe-src-link { color: var(--muted); text-decoration: none; font-size: 12px; }
 .globe-src-link:hover { color: var(--accent-2); }
+
+/* ── expandable live-event details ──────────────────────────────────── */
+.globe-det { display: none; margin-top: 8px; padding: 10px 12px; background: rgba(184,169,106,0.05); border: 1px solid rgba(184,169,106,0.18); border-radius: 8px; }
+.globe-row.open .globe-det { display: block; }
+.globe-det-row { display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 2.5px 0; font-size: 12.5px; line-height: 1.45; }
+.globe-det-k { color: var(--muted); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; padding-top: 1px; }
+.globe-det-links { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.globe-det-link { color: var(--accent-2); font-size: 12.5px; text-decoration: none; }
+.globe-det-link:hover { text-decoration: underline; }

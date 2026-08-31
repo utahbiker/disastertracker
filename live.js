@@ -70,6 +70,7 @@ export function parseGdacs(gj) {
     const coords = f?.geometry?.type === 'Point' && Array.isArray(f.geometry.coordinates) ? f.geometry.coordinates : null;
     const fromRaw = String(p.fromdate ?? p.fromDate ?? '');
     const timeMs = Date.parse(fromRaw);
+    const score = parseFloat(p.alertscore ?? p.alertScore);
     alerts.push({
       level,
       type,
@@ -78,9 +79,12 @@ export function parseGdacs(gj) {
       name: String(p.eventname ?? p.name ?? '').slice(0, 60),
       country: String(p.country ?? '').slice(0, 60),
       from: fromRaw.slice(0, 10),
+      to: String(p.todate ?? p.toDate ?? '').slice(0, 10),
       timeMs: Number.isFinite(timeMs) ? timeMs : null,
       lat: coords && Number.isFinite(coords[1]) ? coords[1] : null,
       lon: coords && Number.isFinite(coords[0]) ? coords[0] : null,
+      score: Number.isFinite(score) ? score : null,
+      severity: String(p?.severitydata?.severitytext ?? p.severitytext ?? '').slice(0, 120),
       url: typeof p?.url?.report === 'string' ? p.url.report : (typeof p.link === 'string' ? p.link : null),
     });
   }
@@ -213,6 +217,19 @@ const lonDiff = (a, b) => { let d = (b - a) % 360; if (d > 180) d -= 360; if (d 
  * USGS quakes, then GDACS/ReliefWeb alerts, then EONET storms),
  * newest first, clutter-capped.
  */
+/** Saffir–Simpson category from sustained winds in knots. */
+export function ssCategory(kts) {
+  if (kts >= 137) return 5;
+  if (kts >= 113) return 4;
+  if (kts >= 96) return 3;
+  if (kts >= 83) return 2;
+  if (kts >= 64) return 1;
+  return 0;
+}
+
+const mapsLink = (lat, lon) => ({ t: 'Map', u: `https://www.google.com/maps?q=${lat.toFixed(3)},${lon.toFixed(3)}` });
+const fmtCoords = (lat, lon) => `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(2)}°${lon >= 0 ? 'E' : 'W'}`;
+
 export function mergeGlobeEvents(quakes, alerts, storms = [], nowMs = Date.now()) {
   const cutoff = nowMs - GLOBE_WINDOW_DAYS * 86400000;
   const out = [];
@@ -222,12 +239,23 @@ export function mergeGlobeEvents(quakes, alerts, storms = [], nowMs = Date.now()
   for (const q of quakes) {
     if (!(q.mag >= GLOBE_QUAKE_MIN_MAG - 1e-9)) continue;
     if (!Number.isFinite(q.lat) || !Number.isFinite(q.lon) || q.timeMs < cutoff) continue;
+    const info = [];
+    info.push(['Magnitude', `M ${q.mag.toFixed(1)}${q.magType ? ` (${q.magType})` : ''}`]);
+    if (Number.isFinite(q.depthKm)) info.push(['Depth', `${Math.round(q.depthKm)} km${q.depthKm < 70 ? ' — shallow' : q.depthKm > 300 ? ' — deep-focus' : ''}`]);
+    if (q.pager) info.push(['USGS PAGER', `${q.pager} impact estimate`]);
+    if (q.tsunami) info.push(['Tsunami', 'tsunami message issued']);
+    if (q.felt) info.push(['Felt reports', q.felt.toLocaleString('en-US')]);
+    info.push(['Epicenter', fmtCoords(q.lat, q.lon)]);
+    const links = [];
+    if (q.url) links.push({ t: 'USGS event page — live updates', u: q.url });
+    links.push(mapsLink(q.lat, q.lon));
     out.push({
       kind: 'EQ', icon: '🌐', color: PING.quake,
       lat: q.lat, lon: q.lon, timeMs: q.timeMs,
       title: `M ${q.mag.toFixed(1)} — ${q.place || 'earthquake'}`,
       short: `M ${q.mag.toFixed(1)}`,
       detail: 'Earthquake', level: null, url: q.url ?? null,
+      info, links,
     });
   }
   for (const a of alerts) {
@@ -237,19 +265,39 @@ export function mergeGlobeEvents(quakes, alerts, storms = [], nowMs = Date.now()
     if (dupe(kind, a.lat, a.lon, a.timeMs)) continue;
     const base = a.name || a.label;
     const withCountry = a.country && !base.toLowerCase().includes(a.country.toLowerCase());
+    const src = a.source ?? 'GDACS';
+    const info = [];
+    if (a.level && a.level !== 'ongoing') info.push(['Alert level', `${src} ${a.level.toUpperCase()}${a.score !== null && a.score !== undefined ? ` (score ${a.score})` : ''}`]);
+    else if (a.level === 'ongoing') info.push(['Status', 'ongoing']);
+    if (a.severity) info.push(['Severity', a.severity]);
+    if (a.country) info.push(['Where', a.country]);
+    if (a.from) info.push(['Since', a.from + (a.to && a.to !== a.from ? ` → ${a.to}` : '')]);
+    if (src === 'ReliefWeb') info.push(['Position', 'country centroid (approximate)']);
+    const links = [];
+    if (a.url) links.push({ t: `${src} ${src === 'GDACS' ? 'event report' : 'disaster page'} — live updates`, u: a.url });
+    links.push(mapsLink(a.lat, a.lon));
     out.push({
       kind, icon: a.icon, color: PING[kind] ?? PING.other,
       lat: a.lat, lon: a.lon, timeMs: a.timeMs,
       title: `${base}${withCountry ? ` — ${a.country}` : ''}`,
       short: a.name || a.label,
-      detail: `${a.label}${a.level && a.level !== 'ongoing' ? ` · ${a.source ?? 'GDACS'} ${a.level}` : a.level === 'ongoing' ? ' · ongoing' : ''}`,
+      detail: `${a.label}${a.level && a.level !== 'ongoing' ? ` · ${src} ${a.level}` : a.level === 'ongoing' ? ' · ongoing' : ''}`,
       level: a.level, url: a.url,
+      info, links,
     });
   }
   for (const s of storms) {
     if (!Number.isFinite(s.lat) || !Number.isFinite(s.lon) || !Number.isFinite(s.timeMs)) continue;
     if (s.timeMs < cutoff) continue;
     if (dupe('TC', s.lat, s.lon, s.timeMs)) continue;
+    const cat = ssCategory(s.kts);
+    const info = [];
+    info.push(['Peak winds', `${Math.round(s.kts)} kt (≈ ${Math.round(s.kts * 1.151)} mph) — Category ${cat}`]);
+    if (s.trackPts > 1 && Number.isFinite(s.sinceMs)) info.push(['Track', `${s.trackPts} positions since ${new Date(s.sinceMs).toISOString().slice(0, 10)}`]);
+    info.push(['Latest position', fmtCoords(s.lat, s.lon)]);
+    const links = [];
+    if (s.url) links.push({ t: `${s.agency ? s.agency + ' storm tracking' : 'Storm tracking'} — live updates`, u: s.url });
+    links.push(mapsLink(s.lat, s.lon));
     out.push({
       kind: 'TC', icon: '🌀', color: PING.TC,
       lat: s.lat, lon: s.lon, timeMs: s.timeMs,
@@ -257,6 +305,7 @@ export function mergeGlobeEvents(quakes, alerts, storms = [], nowMs = Date.now()
       short: s.name,
       detail: `Hurricane-strength storm${s.kts ? ` · ${Math.round(s.kts)} kt` : ''}`,
       level: 'orange', url: s.url ?? null,
+      info, links,
     });
   }
   out.sort((x, y) => y.timeMs - x.timeMs);
@@ -270,10 +319,15 @@ export async function fetchGlobeQuakes(days = GLOBE_WINDOW_DAYS) {
     `&starttime=${since}&minmagnitude=${GLOBE_QUAKE_MIN_MAG}&eventtype=earthquake&orderby=time&limit=60`);
   return gj.features.map((f) => ({
     mag: f.properties.mag,
+    magType: f.properties.magType ?? '',
     place: f.properties.place ?? '',
     timeMs: f.properties.time,
     lon: f.geometry.coordinates[0],
     lat: f.geometry.coordinates[1],
+    depthKm: Number.isFinite(f.geometry.coordinates[2]) ? f.geometry.coordinates[2] : null,
+    pager: f.properties.alert ?? null,      // USGS PAGER impact level
+    tsunami: f.properties.tsunami === 1,
+    felt: Number.isFinite(f.properties.felt) ? f.properties.felt : null,
     url: f.properties.url,
   }));
 }
@@ -288,19 +342,24 @@ export function parseEonetStorms(json, minKts = EONET_MIN_KTS) {
   const out = [];
   for (const ev of events) {
     const g = Array.isArray(ev.geometry) ? ev.geometry : [];
-    let maxKts = 0, last = null;
+    let maxKts = 0, last = null, first = null, nPts = 0;
     for (const p of g) {
       if (p?.magnitudeUnit === 'kts' && Number.isFinite(p.magnitudeValue)) maxKts = Math.max(maxKts, p.magnitudeValue);
-      if (Array.isArray(p?.coordinates) && p.date) last = p;
+      if (Array.isArray(p?.coordinates) && p.date) { last = p; if (!first) first = p; nPts++; }
     }
     if (maxKts < minKts || !last) continue;
     const t = Date.parse(last.date);
+    // the tracking agency's own page (NHC/JTWC/...) beats the EONET API link
+    const src = Array.isArray(ev.sources) ? ev.sources.find((s) => typeof s?.url === 'string') : null;
     out.push({
       name: String(ev.title ?? 'Severe storm').slice(0, 60),
       kts: maxKts,
       lon: last.coordinates[0], lat: last.coordinates[1],
       timeMs: Number.isFinite(t) ? t : null,
-      url: typeof ev.link === 'string' ? ev.link : null,
+      trackPts: nPts,
+      sinceMs: first ? Date.parse(first.date) : null,
+      agency: src?.id ?? null,
+      url: src?.url ?? (typeof ev.link === 'string' ? ev.link : null),
     });
   }
   return out;
