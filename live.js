@@ -65,6 +65,10 @@ export function parseGdacs(gj) {
     const t = GDACS_TYPES[type] ?? { label: type || 'Event', icon: '⚠️' };
     if (level === 'green') { greens++; continue; }
     if (level !== 'red' && level !== 'orange') continue;
+    // Point geometry gives the alert a globe position
+    const coords = f?.geometry?.type === 'Point' && Array.isArray(f.geometry.coordinates) ? f.geometry.coordinates : null;
+    const fromRaw = String(p.fromdate ?? p.fromDate ?? '');
+    const timeMs = Date.parse(fromRaw);
     alerts.push({
       level,
       type,
@@ -72,7 +76,10 @@ export function parseGdacs(gj) {
       icon: t.icon,
       name: String(p.eventname ?? p.name ?? '').slice(0, 60),
       country: String(p.country ?? '').slice(0, 60),
-      from: String(p.fromdate ?? p.fromDate ?? '').slice(0, 10),
+      from: fromRaw.slice(0, 10),
+      timeMs: Number.isFinite(timeMs) ? timeMs : null,
+      lat: coords && Number.isFinite(coords[1]) ? coords[1] : null,
+      lon: coords && Number.isFinite(coords[0]) ? coords[0] : null,
       url: typeof p?.url?.report === 'string' ? p.url.report : (typeof p.link === 'string' ? p.link : null),
     });
   }
@@ -131,4 +138,82 @@ export async function fetchAlerts() {
     const rw = await timeoutFetch('https://api.reliefweb.int/v1/disasters?appname=disastertracker-goinwardout&preset=latest&profile=list&limit=12');
     return { source: 'ReliefWeb', ...parseReliefWeb(rw) };
   }
+}
+
+// ─── globe events: the last 20 STATISTICALLY MAJOR events ────────────────
+//
+// Thresholds (documented in METHODOLOGY § 12b): an event pings the globe
+// only when it clears a rarity bar —
+//   · earthquakes at M ≥ 5.9: λ = 193/yr from this site's own catalog,
+//     one every ~1.9 days globally, so 20 events ≈ the last month. M5.5s
+//     (2.7×  more common) would reduce the globe to noise.
+//   · every other hazard at GDACS ORANGE or RED: GDACS's alert score is
+//     calibrated to expected humanitarian impact, which is the right
+//     severity scale for non-seismic hazards; greens are excluded.
+
+export const GLOBE_QUAKE_MIN_MAG = 5.9;
+export const GLOBE_MAX_EVENTS = 20;
+
+// ping colors per hazard family ('ALPHA' replaced at render time)
+const PING = {
+  quake: 'rgba(216,201,138,ALPHA)',
+  TC: 'rgba(127,168,217,ALPHA)',
+  FL: 'rgba(106,185,176,ALPHA)',
+  VO: 'rgba(224,131,79,ALPHA)',
+  WF: 'rgba(212,117,106,ALPHA)',
+  DR: 'rgba(201,161,91,ALPHA)',
+  other: 'rgba(176,127,217,ALPHA)',
+};
+
+/**
+ * Merge USGS quakes and GDACS alerts into the globe's event list:
+ * threshold-filtered, positioned, deduplicated (a GDACS earthquake alert
+ * within 3° and 4 days of a USGS quake is the same event — USGS wins on
+ * metadata), newest first, capped.
+ */
+export function mergeGlobeEvents(quakes, alerts, cap = GLOBE_MAX_EVENTS) {
+  const out = [];
+  for (const q of quakes) {
+    if (!(q.mag >= GLOBE_QUAKE_MIN_MAG - 1e-9)) continue;
+    if (!Number.isFinite(q.lat) || !Number.isFinite(q.lon)) continue;
+    out.push({
+      kind: 'quake', icon: '🌐', color: PING.quake,
+      lat: q.lat, lon: q.lon, timeMs: q.timeMs,
+      title: `M ${q.mag.toFixed(1)} — ${q.place || 'earthquake'}`,
+      short: `M ${q.mag.toFixed(1)}`,
+      detail: 'Earthquake', level: null, url: q.url ?? null,
+    });
+  }
+  for (const a of alerts) {
+    if (!Number.isFinite(a.lat) || !Number.isFinite(a.lon) || !Number.isFinite(a.timeMs)) continue;
+    if (a.type === 'EQ' && out.some((e) => e.kind === 'quake'
+      && Math.abs(e.lat - a.lat) < 3 && Math.abs(lonDiff(e.lon, a.lon)) < 3
+      && Math.abs(e.timeMs - a.timeMs) < 4 * 86400000)) continue;
+    out.push({
+      kind: a.type || 'other', icon: a.icon, color: PING[a.type] ?? PING.other,
+      lat: a.lat, lon: a.lon, timeMs: a.timeMs,
+      title: `${a.name || a.label}${a.country ? ` — ${a.country}` : ''}`,
+      short: a.name || a.label,
+      detail: `${a.label} · GDACS ${a.level}`, level: a.level, url: a.url,
+    });
+  }
+  out.sort((x, y) => y.timeMs - x.timeMs);
+  return out.slice(0, cap);
+}
+
+const lonDiff = (a, b) => { let d = (b - a) % 360; if (d > 180) d -= 360; if (d <= -180) d += 360; return d; };
+
+/** Quakes M ≥ GLOBE_QUAKE_MIN_MAG over the last `days`, positioned. */
+export async function fetchGlobeQuakes(days = 45) {
+  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  const gj = await timeoutFetch('https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson' +
+    `&starttime=${since}&minmagnitude=${GLOBE_QUAKE_MIN_MAG}&eventtype=earthquake&orderby=time&limit=60`);
+  return gj.features.map((f) => ({
+    mag: f.properties.mag,
+    place: f.properties.place ?? '',
+    timeMs: f.properties.time,
+    lon: f.geometry.coordinates[0],
+    lat: f.geometry.coordinates[1],
+    url: f.properties.url,
+  }));
 }

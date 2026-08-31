@@ -375,10 +375,21 @@ irresponsible at the "quotable number" bar this project sets.)
 
 ## 12b. The live layer ("Happening now") — display only
 
-The dashboard's top panel shows live situational awareness fetched by the
-visitor's browser from open feeds: USGS FDSN (global M ≥ 5 seismicity, last
-30 days), and GDACS alert levels (ReliefWeb latest-disasters as automatic
-fallback). **Nothing in this layer feeds the probability model** — alert
+The "Happening now" page (its own tab) shows live situational awareness
+fetched by the visitor's browser from open feeds: USGS FDSN (global M ≥ 5
+seismicity, last 30 days), and GDACS alert levels (ReliefWeb
+latest-disasters as automatic fallback). Its interactive globe (canvas
+orthographic projection; Natural Earth 110m coastlines, public domain)
+pings the locations of the **last 20 statistically major events**, where
+"major" is a rarity bar, not a vibe: earthquakes at **M ≥ 5.9** (λ =
+193/yr from this site's own catalog — one every ~1.9 days globally, so
+twenty events span roughly a month; smaller magnitudes would bury the map
+in noise) and every other hazard at **GDACS orange or red** (GDACS's
+alert score is calibrated to expected humanitarian impact — the
+appropriate severity scale for non-seismic hazards; greens excluded). A
+GDACS earthquake alert within 3° and 4 days of a USGS quake is treated as
+the same event, with USGS metadata preferred.
+**Nothing in this layer feeds the probability model** — alert
 levels and live counts have different semantics from the validated
 historical record, and the separation is architectural (live.js cannot
 touch the rate estimators). The one statistical statement it makes is the
