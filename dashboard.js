@@ -2,6 +2,7 @@
 // (modern impacts) and deep.js (deep-history extremes).
 import * as I from './impact.js';
 import * as D from './deep.js';
+import { VERSION } from './version.js';
 
 const $ = (id) => document.getElementById(id);
 const fmtPct = (p) => {
@@ -67,6 +68,7 @@ const state = {
 };
 
 async function init() {
+  $('app-version').textContent = VERSION;
   const [raw, deepRaw] = await Promise.all([
     (await fetch('data/impacts.json')).json(),
     (await fetch('data/deep-history.json')).json(),
