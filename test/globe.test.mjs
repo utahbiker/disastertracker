@@ -8,7 +8,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { project, lonDelta } from '../globe.js';
-import { mergeGlobeEvents, GLOBE_QUAKE_MIN_MAG, GLOBE_MAX_EVENTS } from '../live.js';
+import {
+  mergeGlobeEvents, GLOBE_QUAKE_MIN_MAG, GLOBE_MAX_EVENTS, GLOBE_WINDOW_DAYS,
+  hazardCode, parseEonetStorms, parseReliefWeb,
+} from '../live.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -59,9 +62,76 @@ test('mergeGlobeEvents: thresholds, dedup, ordering, cap', () => {
   assert.ok(!out.some((e) => e.title.includes('Japan EQ'))); // dedup kept USGS
   for (let i = 1; i < out.length; i++) assert.ok(out[i - 1].timeMs >= out[i].timeMs, 'newest first');
   // cap
-  const many = Array.from({ length: 40 }, (_, i) => ({ mag: 6, lat: i, lon: i, timeMs: now - i, place: String(i) }));
+  const many = Array.from({ length: 60 }, (_, i) => ({ mag: 6, lat: (i % 30) * 5 - 70, lon: i * 6 - 180, timeMs: now - i * 1e7, place: String(i) }));
   assert.equal(mergeGlobeEvents(many, []).length, GLOBE_MAX_EVENTS);
   assert.ok(GLOBE_QUAKE_MIN_MAG >= 5.9 - 1e-9, 'threshold per spec');
+});
+
+test('21-day window: older events are excluded', () => {
+  const now = Date.now();
+  const quakes = [
+    { mag: 7.0, lat: 0, lon: 0, timeMs: now - (GLOBE_WINDOW_DAYS - 1) * 86400000, place: 'recent' },
+    { mag: 7.5, lat: 20, lon: 20, timeMs: now - (GLOBE_WINDOW_DAYS + 2) * 86400000, place: 'too old' },
+  ];
+  const out = mergeGlobeEvents(quakes, [], [], now);
+  assert.equal(out.length, 1);
+  assert.match(out[0].title, /recent/);
+});
+
+test('hazardCode inference from free-text labels', () => {
+  assert.equal(hazardCode('Tropical Cyclone'), 'TC');
+  assert.equal(hazardCode('Flash Flood'), 'FL');
+  assert.equal(hazardCode('Land Slide'), 'LS');
+  assert.equal(hazardCode('Mudslide'), 'LS');
+  assert.equal(hazardCode('Volcanic eruption'), 'VO');
+  assert.equal(hazardCode('Wild Fire'), 'WF');
+  assert.equal(hazardCode('Earthquake'), 'EQ');
+  assert.equal(hazardCode('Cold Wave'), '');
+});
+
+test('EONET storms: hurricane-force filter, latest track point', () => {
+  const now = new Date().toISOString();
+  const json = { events: [
+    { title: 'Hurricane Test', link: 'https://e', geometry: [
+      { date: '2026-08-20T00:00:00Z', coordinates: [-60, 15], magnitudeValue: 45, magnitudeUnit: 'kts' },
+      { date: now, coordinates: [-70, 22], magnitudeValue: 90, magnitudeUnit: 'kts' },
+    ] },
+    { title: 'Tropical Depression Weak', geometry: [
+      { date: now, coordinates: [130, 18], magnitudeValue: 30, magnitudeUnit: 'kts' },
+    ] },
+  ] };
+  const out = parseEonetStorms(json);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].name, 'Hurricane Test');
+  assert.equal(out[0].lat, 22); // latest point, not first
+  assert.equal(out[0].kts, 90);
+  assert.equal(parseEonetStorms(null).length, 0);
+});
+
+test('cross-source dedup: GDACS storm suppresses the EONET echo, distinct storm kept', () => {
+  const now = Date.now();
+  const alerts = [{ type: 'TC', level: 'red', lat: 12.4, lon: 124.5, timeMs: now - 3600e3, name: 'Cyclone A', label: 'Tropical cyclone', icon: 'x' }];
+  const storms = [
+    { name: 'Cyclone A (EONET)', kts: 100, lat: 13.0, lon: 125.2, timeMs: now - 1800e3 }, // same storm
+    { name: 'Hurricane B', kts: 80, lat: 25, lon: -75, timeMs: now - 7200e3 },            // different basin
+  ];
+  const out = mergeGlobeEvents([], alerts, storms, now);
+  assert.equal(out.length, 2);
+  assert.ok(out.some((e) => e.title.includes('Cyclone A') && !e.title.includes('EONET')));
+  assert.ok(out.some((e) => e.title.includes('Hurricane B')));
+});
+
+test('ReliefWeb fallback rows carry country-centroid coordinates', () => {
+  const rw = { data: [
+    { fields: { name: 'Floods — Pakistan', status: 'ongoing', primary_type: { name: 'Flood' }, primary_country: { name: 'Pakistan', location: { lat: 30.0, lon: 70.0 } }, date: { created: new Date().toISOString() } } },
+  ] };
+  const r = parseReliefWeb(rw);
+  assert.equal(r.alerts[0].lat, 30);
+  assert.equal(r.alerts[0].lon, 70);
+  assert.equal(r.alerts[0].type, 'FL');
+  const out = mergeGlobeEvents([], r.alerts, []);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].kind, 'FL');
 });
 
 test('world-outline.json: sane public-domain coastline data', () => {

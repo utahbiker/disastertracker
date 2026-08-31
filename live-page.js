@@ -45,22 +45,23 @@ function highlight(i) {
 }
 
 async function refreshGlobe() {
-  let quakes = [], alerts = [], sources = [];
+  let quakes = [], alerts = [], storms = [];
+  const sources = [];
   try { quakes = await L.fetchGlobeQuakes(); sources.push('USGS'); } catch { /* status line reports */ }
   try {
     const a = await L.fetchAlerts();
-    if (a.source === 'GDACS') { alerts = a.alerts; sources.push('GDACS'); }
-    // ReliefWeb fallback has no coordinates — alert card still shows it,
-    // but the globe runs on what is positioned
+    alerts = a.alerts; // GDACS positions, or ReliefWeb country centroids
+    sources.push(a.source);
   } catch { /* status line reports */ }
-  const events = L.mergeGlobeEvents(quakes, alerts);
+  try { storms = await L.fetchEonetStorms(); if (storms.length) sources.push('EONET'); } catch { /* optional source */ }
+  const events = L.mergeGlobeEvents(quakes, alerts, storms);
   const firstLoad = globe.events.length === 0;
   globe.setEvents(events);
   renderList(events);
   // on first load, fly to the newest event so a ping is front and center
   if (events.length) { globe.select(0, firstLoad); highlight(0); }
   $('data-status').textContent = events.length
-    ? `${events.length} major events on the globe (${sources.join(' + ')}) · earthquakes M ≥ ${L.GLOBE_QUAKE_MIN_MAG} · GDACS orange/red · updated ${new Date().toTimeString().slice(0, 5)}`
+    ? `${events.length} major events, last ${L.GLOBE_WINDOW_DAYS} days (${sources.join(' + ')}) · quakes M ≥ ${L.GLOBE_QUAKE_MIN_MAG} · alerts orange/red · storms ≥ 64 kt · updated ${new Date().toTimeString().slice(0, 5)}`
     : 'Live feeds unreachable from this network — the globe will retry. The Overview statistics are unaffected.';
 }
 

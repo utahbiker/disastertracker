@@ -24,17 +24,19 @@
   </section>
 
   <section class="card">
-    <h3>The last 20 major events <span class="subtle">drag the globe · click a ping or a row · auto-rotates when idle</span></h3>
+    <h3>Major events — last 21 days <span class="subtle">drag the globe · click a ping or a row · auto-rotates when idle</span></h3>
     <div class="globe-wrap">
       <div class="globe-box"><canvas id="globe"></canvas></div>
       <div id="globe-list" class="globe-list"></div>
     </div>
     <p class="hint">What qualifies as major (thresholds, not vibes): <b>earthquakes M ≥ 5.9</b> —
-    193/yr globally from this site's own catalog, one every ~1.9 days, so twenty events span
-    roughly a month; anything smaller would bury the map in noise. <b>All other hazards at
-    GDACS orange or red alert</b> — GDACS's alert score is calibrated to expected humanitarian
-    impact, the right severity scale for storms, floods, volcanoes and wildfires. Green alerts
-    are excluded. See METHODOLOGY § 12b.</p>
+    193/yr globally from this site's own catalog, one every ~1.9 days (~11 in a 21-day window);
+    anything smaller would bury the map in noise. <b>Cyclones, floods, volcanoes, wildfires,
+    droughts and landslides at GDACS orange or red alert</b> — GDACS's alert score is calibrated
+    to expected humanitarian impact (greens excluded) — plus <b>tropical storms at hurricane
+    strength (≥ 64 kt, NASA EONET)</b> with precise positions. If GDACS is unreachable,
+    ReliefWeb's current-disaster list fills in, pinned at the affected country's centroid.
+    Duplicate reports of the same event across sources are merged. See METHODOLOGY § 12b.</p>
   </section>
 
   <section class="card">
