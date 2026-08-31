@@ -170,10 +170,17 @@ async function init() {
 
 // ─── model + render ──────────────────────────────────────────────────────
 
+// Local rates are kernel-smoothed (Gaussian σ = 50 km): each epicenter
+// contributes its kernel's probability mass inside the circle instead of a
+// hard in/out count. Bandwidth selected on 2000–2011 → 2012–2016 validation
+// and confirmed on held-out 2017–2024 (+0.10 nats/event over raw counting,
+// 12,095 test events — backtest/spatial.mjs, METHODOLOGY § 7).
+const SMOOTH_SIGMA_KM = 50;
+
 function recomputeModel() {
   state.model = state.scope === 'global'
     ? state.globalModel
-    : E.buildModel(state.cat, state.completeness, state.nowMin, { lat: state.lat, lon: state.lon, radiusKm: state.radiusKm });
+    : E.buildModel(state.cat, state.completeness, state.nowMin, { lat: state.lat, lon: state.lon, radiusKm: state.radiusKm, sigmaKm: SMOOTH_SIGMA_KM });
 }
 
 function assessment() {
@@ -207,7 +214,13 @@ function renderHeadline(a) {
 
   const facts = [];
   const emp = a.empirical;
-  facts.push(`<div class="fact"><b>${emp.n.toLocaleString()}</b> event${emp.n === 1 ? '' : 's'} M ${state.mag.toFixed(1)}+ in the ${emp.Tyears.toFixed(0)}-year complete record <span class="sm">(${fmtDate(emp.windowStartMin)} → ${fmtDate(emp.windowEndMin)})</span></div>`);
+  const windowNote = `M ${state.mag.toFixed(1)}+ in the ${emp.Tyears.toFixed(0)}-year complete record <span class="sm">(${fmtDate(emp.windowStartMin)} → ${fmtDate(emp.windowEndMin)})</span>`;
+  if (state.scope === 'local') {
+    const nStr = emp.n < 100 ? emp.n.toFixed(1) : Math.round(emp.n).toLocaleString();
+    facts.push(`<div class="fact"><b>${nStr}</b> effective events <span class="sm">(kernel-smoothed)</span> ${windowNote}</div>`);
+  } else {
+    facts.push(`<div class="fact"><b>${emp.n.toLocaleString()}</b> event${emp.n === 1 ? '' : 's'} ${windowNote}</div>`);
+  }
   if (a.lastEventMin != null) {
     const quietY = (state.nowMin - a.lastEventMin) / E.MIN_PER_YEAR;
     const place = state.topupPlaces.get(Math.round(a.lastEventMin));
@@ -222,9 +235,12 @@ function renderHeadline(a) {
     'gr-regional-extrapolation': 'regional Gutenberg–Richter extrapolation',
     'fixed-b-scaling': 'regional rate scaled with the global b-value (sparse local record)',
   }[a.method] ?? a.method;
-  facts.push(`<div class="fact"><span class="sm">method: ${methodText}</span></div>`);
+  const smoothNote = state.scope === 'local'
+    ? ` · rates kernel-smoothed (Gaussian σ ${SMOOTH_SIGMA_KM} km, validated out-of-sample)`
+    : '';
+  facts.push(`<div class="fact"><span class="sm">method: ${methodText}${smoothNote}</span></div>`);
   if (state.model.gr && (state.scope === 'global' || state.model.grIsRegional)) {
-    facts.push(`<div class="fact"><span class="sm">b-value ${state.model.gr.b.toFixed(2)} ± ${state.model.gr.sigmaB.toFixed(2)} (${state.scope === 'global' ? 'global' : 'regional'} fit, n=${state.model.gr.n.toLocaleString()})</span></div>`);
+    facts.push(`<div class="fact"><span class="sm">b-value ${state.model.gr.b.toFixed(2)} ± ${state.model.gr.sigmaB.toFixed(2)} (${state.scope === 'global' ? 'global' : 'regional'} fit, n=${Math.round(state.model.gr.n).toLocaleString()})</span></div>`);
   }
   $('prob-facts').innerHTML = facts.join('');
 }
@@ -258,6 +274,7 @@ function renderCaveats(a) {
       items.push('<li><b>Wasatch Front specifically:</b> the Working Group on Utah Earthquake Probabilities (2016) — which folds in trench-derived paleoseismic recurrence — puts the 50-year probability of an M6.75+ on the Wasatch Front at <b>43%</b>, far above what the instrumental catalog here implies. For Utah planning purposes, prefer their numbers for large magnitudes; this tool’s M5–6 rates are consistent with theirs.</li>');
     }
     items.push('<li><b>Radius matters:</b> probabilities scale with the area you draw. A 200 km circle answers “near me”; it does not answer “under my house.”</li>');
+    items.push(`<li><b>Kernel-smoothed rates:</b> local rates count each epicenter fractionally by how much of a ${SMOOTH_SIGMA_KM} km Gaussian kernel falls inside your circle (Frankel 1995 — the method behind the USGS national hazard maps). This borrows strength from surrounding seismicity and stops rates jumping as the pin moves; validated pseudo-prospectively (+0.10 nats/event over raw counting on 12,095 held-out 2017–2024 events, METHODOLOGY § 7). The event list and “last one” still show actual in-circle events.</li>`);
   }
   items.push('<li><b>Catalog seams:</b> magnitudes before 2000 are ISC-GEM Mw; after 2000 they are ComCat preferred magnitudes (mixed types). The b-value is fitted on the homogeneous modern era only. Aftershocks are included (rates are total-seismicity, not declustered — appropriate for “will one happen,” inflating short-window probabilities right after big events).</li>');
   $('caveat-list').innerHTML = items.join('');
@@ -349,7 +366,8 @@ function drawGR() {
   const M0 = 4.5, M1 = 9.6;
   const pts = [];
   for (let m = M0; m <= M1 + 1e-9; m += 0.25) {
-    const r = E.empiricalRate(state.cat, m, state.completeness, state.nowMin, state.model.indices);
+    const r = E.empiricalRate(state.cat, m, state.completeness, state.nowMin,
+      state.model.smoothIdx ?? state.model.indices, state.model.smoothW);
     if (r) pts.push(r);
   }
   const rates = pts.flatMap((p) => [p.lambda, p.ci95.hi, p.ci95.lo].filter((v) => v > 0));
@@ -413,8 +431,8 @@ function drawGR() {
   $('gr-caption').textContent = (state.scope === 'global'
     ? `dots: counted rates (95% CI) · line: G-R fit b=${state.globalModel.gr.b.toFixed(2)} · dashed: tapered G-R, corner M ${state.globalModel.tgr?.cornerMag.toFixed(1)}`
     : state.model.grIsRegional
-      ? `dots: counted regional rates (95% CI) · line: regional G-R fit b=${state.model.gr.b.toFixed(2)}`
-      : 'dots: counted regional rates (95% CI) · too few events for a regional G-R fit');
+      ? `dots: kernel-smoothed regional rates (95% CI) · line: regional G-R fit b=${state.model.gr.b.toFixed(2)}`
+      : 'dots: kernel-smoothed regional rates (95% CI) · too few events for a regional G-R fit');
 }
 
 // map: static base rendered once, overlays per frame

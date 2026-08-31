@@ -227,6 +227,38 @@ short-record limitation § 5.2 documents, surfaced as a UI caveat within 300 km 
 - Wiemer, S., & Wyss, M. (2000). Minimum magnitude of completeness in earthquake catalogs. *BSSA* 90.
 - Working Group on Utah Earthquake Probabilities (2016). *Earthquake probabilities for the Wasatch Front region.* Utah Geological Survey Misc. Pub. 16-3.
 
+## 7. Kernel-smoothed regional rates
+
+The hard circle used through v1.6 treats an epicenter 1 km outside the
+radius as zero information and one 1 km inside as a full event: local rates
+jump discontinuously as the pin moves, and small circles are dominated by
+count noise. Since v1.7 the regional mode counts each epicenter
+**fractionally, by the mass of an isotropic 2-D Gaussian kernel (σ = 50 km)
+falling inside the circle** — exactly the integral over the query disc of
+the kernel-density-estimated rate field, evaluated event-by-event in closed
+form (the noncentral-χ²₂ CDF). This is smoothed seismicity in the tradition
+of Frankel (1995), the construction behind the USGS national seismic hazard
+maps' background rates, refined by Helmstetter, Kagan & Jackson (2007).
+Effective counts are non-integer; the Garwood interval extends unchanged
+(χ² quantiles accept non-integer degrees of freedom), and the regional
+G-R b-value uses the weighted Aki–Utsu estimator. The event list, "last
+one," renewal gaps, and max-observed still use actual in-circle events —
+smoothing informs *rates*, not *history*.
+
+**Validated, not assumed** (`backtest/spatial.mjs`, re-run in CI): on an
+equal-area world grid (~18,300 cells), models fitted on training years
+forecast per-cell M ≥ 5 counts in later years, scored by Poisson
+log-likelihood with a shared 0.5% uniform water level. Bandwidth was
+selected on 2000–2011 → 2012–2016 (adaptive k-NN k=2 best at +0.197
+nats/event over raw cell counts; fixed σ = 50 km best fixed at +0.188),
+then confirmed on held-out 2017–2024 (12,095 events): adaptive +0.105,
+fixed σ = 50 km +0.097 nats/event. **The shipped configuration is fixed
+σ = 50 km** — it keeps 92% of the adaptive gain with no per-event
+bandwidth data to ship; adaptive smoothing is noted as a deferred marginal
+improvement. Additional references: Frankel (1995), *Seism. Res. Lett.*
+66(4); Helmstetter, Kagan & Jackson (2007), *Seism. Res. Lett.* 78(1);
+Silverman (1986), *Density Estimation*; Zechar & Jordan (2008), *GJI* 172.
+
 ---
 
 # Part II — Multi-hazard impact model (master dashboard)

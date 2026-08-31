@@ -117,6 +117,68 @@ export function regionIndices(cat, lat0, lon0, radiusKm) {
   return out;
 }
 
+// ─── kernel-smoothed seismicity (Frankel 1995; Helmstetter et al. 2007) ──
+//
+// The hard-circle count treats an epicenter 1 km outside the radius as zero
+// information and one 1 km inside as a full event, so local rates jump as
+// the pin moves and small circles are count-noisy. Smoothed seismicity
+// replaces binary membership with each event's probability mass inside the
+// circle under an isotropic 2-D Gaussian kernel centered on its epicenter —
+// exactly the integral of the kernel-density-estimated rate field over the
+// query circle, computed event-by-event in closed form.
+
+/**
+ * Mass of an isotropic 2-D Gaussian (std sigmaKm), centered dKm from a
+ * circle's center, that falls inside radius radiusKm. This is the
+ * noncentral-chi-square(2 dof) CDF / Marcum Q: series over Poisson-weighted
+ * central chi-square terms.
+ */
+export function gaussianCircleMass(dKm, radiusKm, sigmaKm) {
+  if (!(sigmaKm > 0)) return dKm <= radiusKm ? 1 : 0;
+  if (dKm - radiusKm > 6 * sigmaKm) return 0;
+  if (radiusKm - dKm > 6 * sigmaKm) return 1;
+  const halfDelta = 0.5 * (dKm / sigmaKm) ** 2;   // noncentrality / 2
+  const halfT = 0.5 * (radiusKm / sigmaKm) ** 2;  // chi-square argument / 2
+  // out = Σ_k Pois(k; δ/2) · P(χ²_{2k+2} ≤ t),
+  // with P(χ²_{2k+2} ≤ t) = 1 − e^{−t/2} Σ_{j≤k} (t/2)^j / j!
+  let pois = Math.exp(-halfDelta); // Poisson pmf at k
+  let chiTerm = Math.exp(-halfT);  // e^{−t/2} (t/2)^k / k!
+  let chiSum = chiTerm;            // Σ_{j≤k}
+  let out = 0;
+  const kMax = 40 + Math.ceil(halfDelta + 8 * Math.sqrt(halfDelta + 1));
+  for (let k = 0; k < kMax; k++) {
+    out += pois * (1 - chiSum);
+    pois *= halfDelta / (k + 1);
+    chiTerm *= halfT / (k + 1);
+    chiSum += chiTerm;
+  }
+  return Math.min(1, Math.max(0, out));
+}
+
+/**
+ * Fractional region membership for every event with non-negligible kernel
+ * mass inside the circle. Returns parallel arrays { idx, w } — a smooth
+ * generalization of regionIndices (σ → 0 recovers it exactly).
+ */
+export function regionWeights(cat, lat0, lon0, radiusKm, sigmaKm) {
+  const reach = radiusKm + 6 * sigmaKm;
+  const dLat = reach / 111.2;
+  const cosLat = Math.max(0.01, Math.cos(lat0 * Math.PI / 180));
+  const dLon = reach / (111.2 * cosLat);
+  const idx = [], w = [];
+  for (let i = 0; i < cat.n; i++) {
+    if (Math.abs(cat.lat[i] - lat0) > dLat) continue;
+    let dl = Math.abs(cat.lon[i] - lon0);
+    if (dl > 180) dl = 360 - dl;
+    if (dl > dLon) continue;
+    const d = haversineKm(lat0, lon0, cat.lat[i], cat.lon[i]);
+    if (d > reach) continue;
+    const mass = gaussianCircleMass(d, radiusKm, sigmaKm);
+    if (mass > 1e-6) { idx.push(i); w.push(mass); }
+  }
+  return { idx, w };
+}
+
 // ─── special functions ───────────────────────────────────────────────────
 
 const LANCZOS = [
@@ -231,23 +293,27 @@ export function windowForThreshold(m, completeness, nowMin) {
 
 /**
  * Empirical exceedance rate for magnitude ≥ m over the completeness window.
- * `indices` optionally restricts to a region (array of catalog indices).
+ * `indices` optionally restricts to a region (array of catalog indices);
+ * `weights` (parallel to indices) makes the count fractional — the
+ * kernel-smoothed generalization. n is then an effective (non-integer)
+ * count; the Garwood interval extends naturally since chi2inv accepts
+ * non-integer degrees of freedom.
  */
-export function empiricalRate(cat, m, completeness, nowMin, indices = null) {
+export function empiricalRate(cat, m, completeness, nowMin, indices = null, weights = null) {
   const w = windowForThreshold(m, completeness, nowMin);
   if (!w) return null;
   const Tyears = (w.endMin - w.startMin) / MIN_PER_YEAR;
   if (Tyears <= 0) return null;
   let n = 0;
   let lastMin = null;
-  const scan = (i) => {
+  const scan = (i, wt) => {
     if (cat.mag[i] >= m - EPS_MAG && cat.t[i] >= w.startMin && cat.t[i] < w.endMin) {
-      n++;
+      n += wt;
       if (lastMin === null || cat.t[i] > lastMin) lastMin = cat.t[i];
     }
   };
-  if (indices) for (const i of indices) scan(i);
-  else for (let i = 0; i < cat.n; i++) scan(i);
+  if (indices) for (let k = 0; k < indices.length; k++) scan(indices[k], weights ? weights[k] : 1);
+  else for (let i = 0; i < cat.n; i++) scan(i, 1);
   const lambda = n / Tyears;
   const ci95 = poissonRateCI(n, Tyears, 0.95);
   const ci68 = poissonRateCI(n, Tyears, 0.68);
@@ -262,18 +328,26 @@ export function empiricalRate(cat, m, completeness, nowMin, indices = null) {
  * annual a-value referenced at mc.
  * mags: array/typed array of magnitudes already filtered to ≥ mc.
  */
-export function fitGutenbergRichter(mags, mc, Tyears, dm = 0.1) {
-  const n = mags.length;
+export function fitGutenbergRichter(mags, mc, Tyears, dm = 0.1, weights = null) {
+  // weighted form: weights are fractional event memberships (kernel
+  // smoothing); n becomes the effective count Σw and the Shi & Bolt error
+  // uses it in place of the integer count.
+  let n = 0, sum = 0;
+  for (let i = 0; i < mags.length; i++) {
+    const wt = weights ? weights[i] : 1;
+    n += wt; sum += wt * mags[i];
+  }
   if (n < 2) return null;
-  let sum = 0;
-  for (let i = 0; i < n; i++) sum += mags[i];
   const mean = sum / n;
   const denom = mean - (mc - dm / 2);
   if (denom <= 0) return null;
   const b = LOG10E / denom;
-  // Shi & Bolt: sigma_b = 2.3026 * b^2 * sqrt( sum((Mi - mean)^2) / (n (n-1)) )
+  // Shi & Bolt: sigma_b = 2.3026 * b^2 * sqrt( sum(w (Mi - mean)^2) / (n (n-1)) )
   let ss = 0;
-  for (let i = 0; i < n; i++) { const d = mags[i] - mean; ss += d * d; }
+  for (let i = 0; i < mags.length; i++) {
+    const d = mags[i] - mean;
+    ss += (weights ? weights[i] : 1) * d * d;
+  }
   const sigmaB = n > 1 ? Math.log(10) * b * b * Math.sqrt(ss / (n * (n - 1))) : NaN;
   const aAnnual = Math.log10(n / Tyears) + b * mc; // log10 N(M≥0) per year
   return { b, sigmaB, aAnnual, n, mc, mean, Tyears };
@@ -286,13 +360,16 @@ export const grRate = (fit, m) => Math.pow(10, fit.aAnnual - fit.b * m);
  * Maximum-curvature Mc estimate (Wiemer & Wyss 2000): modal 0.1-magnitude
  * bin of the non-cumulative histogram, + 0.2 correction.
  */
-export function estimateMcMaxCurvature(mags, floor = 4.5) {
-  if (mags.length < 20) return null;
+export function estimateMcMaxCurvature(mags, floor = 4.5, weights = null) {
+  let total = 0;
   const counts = new Map();
-  for (const m of mags) {
-    const bin = Math.round(m * 10);
-    counts.set(bin, (counts.get(bin) ?? 0) + 1);
+  for (let i = 0; i < mags.length; i++) {
+    const wt = weights ? weights[i] : 1;
+    total += wt;
+    const bin = Math.round(mags[i] * 10);
+    counts.set(bin, (counts.get(bin) ?? 0) + wt);
   }
+  if (total < 20) return null;
   let best = null, bestC = -1;
   for (const [bin, c] of counts) {
     if (c > bestC || (c === bestC && bin < best)) { best = bin; bestC = c; }
@@ -423,32 +500,51 @@ export function renewalConditionalProb(fit, elapsed, windowYears) {
  * cat           merged decoded catalog
  * completeness  ETL completeness config
  * nowMin        current time in catalog minutes
- * region        null for global, else { lat, lon, radiusKm }
+ * region        null for global, else { lat, lon, radiusKm, sigmaKm? } —
+ *               sigmaKm > 0 turns on kernel-smoothed (fractional) counting
+ *               for rates and G-R fits; hard-circle indices are still kept
+ *               for the event list, renewal gaps, and max-observed.
  */
 export function buildModel(cat, completeness, nowMin, region = null) {
   const indices = region ? regionIndices(cat, region.lat, region.lon, region.radiusKm) : null;
+  const smooth = region && region.sigmaKm > 0
+    ? regionWeights(cat, region.lat, region.lon, region.radiusKm, region.sigmaKm)
+    : null;
 
   // G-R fit on the modern complete era (2000+ → now cap for [4.5,5.5) band
   // handled by only fitting on the modern window at mc)
   const fitStartMin = yearToMin('2000-01-01');
   const fitEndMin = Math.min(nowMin, yearToMin('2024-01-08')); // span where M4.5 band is complete
   const magsModern = [];
-  const collect = (i) => {
-    if (cat.t[i] >= fitStartMin && cat.t[i] < fitEndMin && Number.isFinite(cat.mag[i])) magsModern.push(cat.mag[i]);
+  const wModern = smooth ? [] : null;
+  const collect = (i, wt) => {
+    if (cat.t[i] >= fitStartMin && cat.t[i] < fitEndMin && Number.isFinite(cat.mag[i])) {
+      magsModern.push(cat.mag[i]);
+      if (wModern) wModern.push(wt);
+    }
   };
-  if (indices) for (const i of indices) collect(i);
-  else for (let i = 0; i < cat.n; i++) collect(i);
+  if (smooth) for (let k = 0; k < smooth.idx.length; k++) collect(smooth.idx[k], smooth.w[k]);
+  else if (indices) for (const i of indices) collect(i, 1);
+  else for (let i = 0; i < cat.n; i++) collect(i, 1);
 
   const TyearsFit = (fitEndMin - fitStartMin) / MIN_PER_YEAR;
   let mc = 4.5, mcMethod = 'catalog floor';
   if (region) {
-    const est = estimateMcMaxCurvature(magsModern, 4.5);
+    const est = estimateMcMaxCurvature(magsModern, 4.5, wModern);
     if (est !== null) { mc = est; mcMethod = 'maximum curvature + 0.2'; }
   }
-  const magsAboveMc = magsModern.filter((m) => m >= mc - EPS_MAG);
-  let gr = fitGutenbergRichter(magsAboveMc, mc, TyearsFit);
+  const magsAboveMc = [], wAboveMc = wModern ? [] : null;
+  let nAboveMc = 0;
+  for (let k = 0; k < magsModern.length; k++) {
+    if (magsModern[k] >= mc - EPS_MAG) {
+      magsAboveMc.push(magsModern[k]);
+      if (wAboveMc) wAboveMc.push(wModern[k]);
+      nAboveMc += wModern ? wModern[k] : 1;
+    }
+  }
+  let gr = fitGutenbergRichter(magsAboveMc, mc, TyearsFit, 0.1, wAboveMc);
   let grIsRegional = true;
-  if (region && (!gr || magsAboveMc.length < 50)) {
+  if (region && (!gr || nAboveMc < 50)) {
     gr = null; grIsRegional = false; // caller supplies globalGR fallback
   }
 
@@ -478,6 +574,8 @@ export function buildModel(cat, completeness, nowMin, region = null) {
 
   return {
     region, indices, gr, grIsRegional, tgr, mc, mcMethod,
+    smoothIdx: smooth ? smooth.idx : null,
+    smoothW: smooth ? smooth.w : null,
     nEvents: indices ? indices.length : cat.n,
     maxObserved: Number.isFinite(maxObserved) ? maxObserved : null,
     maxObservedMin,
@@ -493,7 +591,9 @@ export function buildModel(cat, completeness, nowMin, region = null) {
  *   n < 3 and a G-R/TGR model is available → model extrapolation, flagged.
  */
 export function assessThreshold(cat, completeness, nowMin, model, m, windowYears, globalGR = null) {
-  const emp = empiricalRate(cat, m, completeness, nowMin, model.indices);
+  const emp = model.smoothIdx
+    ? empiricalRate(cat, m, completeness, nowMin, model.smoothIdx, model.smoothW)
+    : empiricalRate(cat, m, completeness, nowMin, model.indices);
   if (!emp) return null;
 
   let lambda = emp.lambda, lambdaLo = emp.ci95.lo, lambdaHi = emp.ci95.hi;
@@ -515,7 +615,7 @@ export function assessThreshold(cat, completeness, nowMin, model, m, windowYears
       if (model.region && !model.grIsRegional && globalGR) {
         // fixed-b scaling: regional a from regional counts at a robust
         // reference threshold, global b for the slope
-        const ref = referenceThreshold(cat, completeness, nowMin, model.indices);
+        const ref = referenceThreshold(cat, completeness, nowMin, model.smoothIdx ?? model.indices, model.smoothW);
         if (ref) {
           lambda = ref.lambda * Math.pow(10, -globalGR.b * (m - ref.m));
           method = 'fixed-b-scaling';
@@ -558,15 +658,15 @@ export function assessThreshold(cat, completeness, nowMin, model, m, windowYears
 }
 
 /** Largest threshold with ≥ 30 events regionally — anchor for fixed-b scaling. */
-function referenceThreshold(cat, completeness, nowMin, indices) {
+function referenceThreshold(cat, completeness, nowMin, indices, weights = null) {
   for (const m of [6.0, 5.5, 5.0, 4.5]) {
-    const r = empiricalRate(cat, m, completeness, nowMin, indices);
+    const r = empiricalRate(cat, m, completeness, nowMin, indices, weights);
     if (r && r.n >= 30) return r;
   }
   // fall back to the most populated of the candidates
   let best = null;
   for (const m of [5.0, 4.5]) {
-    const r = empiricalRate(cat, m, completeness, nowMin, indices);
+    const r = empiricalRate(cat, m, completeness, nowMin, indices, weights);
     if (r && r.n > 0 && (!best || r.n > best.n)) best = r;
   }
   return best;
