@@ -226,3 +226,118 @@ short-record limitation § 5.2 documents, surfaced as a UI caveat within 300 km 
 - Tinti, S., & Mulargia, F. (1987). Confidence intervals of b values for grouped magnitudes. *BSSA* 77.
 - Wiemer, S., & Wyss, M. (2000). Minimum magnitude of completeness in earthquake catalogs. *BSSA* 90.
 - Working Group on Utah Earthquake Probabilities (2016). *Earthquake probabilities for the Wasatch Front region.* Utah Geological Survey Misc. Pub. 16-3.
+
+---
+
+# Part II — Multi-hazard impact model (master dashboard)
+
+The dashboard answers a different question than Part I: not "how often does an
+earthquake of magnitude m occur here," but **"how often does *any* natural disaster
+exceed a given human or economic impact, anywhere on Earth (or in the US)?"** The
+statistical object is a marked multi-hazard point process filtered on impact marks.
+
+## 8. Impact data
+
+**EM-DAT**, the international disaster database (CRED / UCLouvain, Brussels —
+www.emdat.be; Delforge et al. 2025), public table including historical events,
+snapshot **2024-03-26** (obtained via the public copy committed in
+`com-480-data-visualization/project-2024-DisasterClass`; EM-DAT terms: free for
+non-commercial use with attribution — to refresh or re-license, register at
+public.emdat.be and re-run `etl/build-impacts.mjs`).
+
+Transformations (see `etl/build-impacts.mjs`):
+
+- **Natural physical hazards only.** The Biological subgroup (epidemics,
+  infestations) is excluded; so are technological disasters. Hazard classes:
+  Earthquake (incl. tsunamis), Storm, Flood, Drought, Extreme temperature,
+  Landslide, Wildfire, Volcanic activity, Other.
+- **Country rows → physical events.** EM-DAT records one row per affected
+  country; rows sharing a `DisNo.` prefix are aggregated (impacts summed) so
+  "an event killing ≥ X" means the physical event (the 2004 Indian Ocean
+  tsunami is one event with ~226k deaths across 12+ country rows, not 12
+  smaller events). 26,443 rows → 13,571 physical events, 1900 → 2024-02.
+- **US scope** keeps each event's US-portion impacts (ISO USA + PRI, VIR, GUM,
+  ASM, MNP — Hurricane Maria's Puerto Rico toll belongs to US mode).
+- **Damages** use EM-DAT's CPI-adjusted series (≈ 2024 US$).
+
+## 9. Completeness windows (impact thresholds)
+
+EM-DAT's coverage of small events improves enormously over time (79 recorded
+events in the 1900s vs ~4,500 in the 2000s); large events are reliably
+recorded much further back. Windows were chosen from a per-decade rate
+stabilization analysis (the decade table is reproduced in the ETL comments):
+
+| Threshold | Complete from | Empirical basis |
+|---|---|---|
+| ≥ 10 deaths | 2000 | rate plateaus ~1990s–2000s (~115–140/yr) |
+| ≥ 100 deaths | 1990 | plateau ~20–28/yr from the 1980s |
+| ≥ 1,000 deaths | 1930 | remarkably stable ~2–4/yr across the century |
+| ≥ 10,000 deaths | 1900 | large events historically well recorded |
+| ≥ $100M adj. damage | 2000 | damage reporting matures late |
+| ≥ $1B adj. damage | 1990 | |
+
+A threshold uses the window of the largest table entry ≤ it (conservative:
+shorter windows widen CIs but avoid undercount bias).
+
+## 10. The probability model
+
+Per hazard h, the rate λ_h(X) is the count of qualifying events in the window
+divided by its length, with exact Garwood CIs (§ 2.1). Hazards superpose:
+
+```
+P(≥1 event ≥ X within T) = 1 − exp( −Σ_h λ_h(X) · s_h(T) · T )
+```
+
+s_h(T) is a **seasonality factor**: a smoothed monthly climatology per hazard
+(2000+, floor threshold for stable counts, ±1-month kernel, normalized to
+mean 1), averaged over the actual forecast window. It matters only for
+sub-annual windows (hurricane season is real: the Storm September factor
+roughly doubles May) and converges to 1 for multi-year windows. Per-hazard
+"share of risk" is λ_h·s_h / Σ λ·s.
+
+No tail extrapolation is performed beyond observed impacts: thresholds with
+zero qualifying events report "too rare to rate empirically" rather than a
+fitted number. (A tapered severity-tail fit is a possible extension; the
+heavy right tail of disaster deaths makes naive power-law extrapolation
+irresponsible at the "quotable number" bar this project sets.)
+
+## 11. Validation (Part II)
+
+`test/impact.test.mjs` (14 tests) pins:
+
+| Quantity | This app | Check |
+|---|---|---|
+| λ(deaths ≥ 100, global) | ~23/yr | decade-table plateau 20–28/yr |
+| λ(deaths ≥ 10,000, global) | ~0.6/yr | century record 0.3–1.2/yr |
+| 2004 Indian Ocean tsunami | 1 event, ~226k deaths, 12+ countries | aggregation correctness |
+| Hurricane Katrina (US scope) | ~1,800 US deaths | EM-DAT US value |
+| Storm seasonality | Sep ≫ May | NH hurricane season |
+| Decomposition | Σ per-hazard λ = total λ exactly | superposition consistency |
+| λ(damage ≥ $10B adj.) | ~2–3/yr | reinsurance-industry reporting range |
+
+## 12. Limitations (Part II)
+
+1. **Fixed snapshot.** The impact catalog ends 2024-02; there is no live feed
+   (EM-DAT requires authenticated download). Long-run rates remain valid; the
+   "most recent event" list does not extend past the snapshot.
+2. **Non-stationarity, both directions.** Disaster *mortality* has declined
+   for decades (early warning, response capacity) — death-based rates at
+   extreme thresholds are dominated by early-century famines/floods and lean
+   high as forecasts. *Damages* rise with exposure — damage-based rates lean
+   low. The completeness windows bound but cannot remove this.
+3. **Reporting selection.** EM-DAT entry requires ≥10 deaths, ≥100 affected,
+   or a declaration/appeal; damage figures exist for only ~40% of events and
+   skew toward insured, wealthy regions.
+4. **Event aggregation** by DisNo prefix is exact for EM-DAT's own event
+   identity; multi-week compound episodes (e.g., a monsoon season) may appear
+   as several events.
+5. **US cross-source redundancy** was evaluated against the tidyDisasters
+   compilation (FEMA + EM-DAT merged) and rejected: that dataset duplicates
+   national death tolls across state-level rows (Katrina sums to ~38,000),
+   so it would corrupt rather than corroborate. NOAA Storm Events is the
+   right future US enrichment source.
+
+## 13. Additional references
+
+- Delforge, D., et al. (2025). EM-DAT: the Emergency Events Database. *Int. J. Disaster Risk Reduction*.
+- UNDRR & CRED (2020). *Human cost of disasters 2000–2019.*

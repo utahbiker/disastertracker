@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earthquake Probabilities</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌍</text></svg>">
+</head>
+<body>
+<header>
+  <h1>Disaster Probability Tracker</h1>
+  <p class="tagline">Statistical occurrence probabilities from historical catalogs — not predictions.</p>
+  <nav id="hazard-tabs">
+    <a class="tab" href="index.html">← All hazards</a>
+    <span class="tab active">Earthquake deep-dive</span>
+  </nav>
+</header>
+
+<main id="earthquake-panel">
+
+  <section id="status-bar">
+    <span id="data-status">Loading catalogs…</span>
+  </section>
+
+  <section class="controls card">
+    <div class="control-group" id="scope-group">
+      <label class="group-label">Scope</label>
+      <div class="seg">
+        <button id="scope-global" class="seg-btn active">Anywhere on Earth</button>
+        <button id="scope-local" class="seg-btn">Local area</button>
+      </div>
+      <div id="local-controls" hidden>
+        <div class="row">
+          <select id="preset-select" aria-label="Preset locations">
+            <option value="">— choose a place or click the map —</option>
+          </select>
+          <button id="geolocate" title="Use my current location">📍 My location</button>
+        </div>
+        <div class="row">
+          <label for="radius">Radius <span id="radius-label">200</span> km</label>
+          <input type="range" id="radius" min="50" max="1000" step="25" value="200">
+        </div>
+        <div class="row coords" id="coords-readout"></div>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <label class="group-label" for="mag">Magnitude at least <strong id="mag-label">6.0</strong></label>
+      <input type="range" id="mag" min="5.0" max="9.5" step="0.1" value="6.0">
+    </div>
+
+    <div class="control-group">
+      <label class="group-label" for="scrub">Window: today → <strong id="scrub-label">+1 year</strong></label>
+      <input type="range" id="scrub" min="0" max="1000" step="1" value="500">
+      <p class="hint">Scrub forward to widen the forecast window and watch cumulative probability grow.</p>
+    </div>
+  </section>
+
+  <section class="headline card">
+    <div class="prob-main">
+      <div class="prob-number" id="prob-main">—</div>
+      <div class="prob-sub" id="prob-sub"></div>
+      <div class="prob-ci" id="prob-ci"></div>
+    </div>
+    <div class="prob-facts" id="prob-facts"></div>
+  </section>
+
+  <section class="model-cards">
+    <div class="card model-card" id="poisson-card">
+      <h3>Poisson model <span class="badge">standard</span></h3>
+      <div class="model-value" id="poisson-value">—</div>
+      <p class="model-note">Treats events as memoryless with a constant long-run rate — the standard
+      null model for seismicity at this scale (Kagan &amp; Jackson 1991). The probability does not
+      depend on how long it has been quiet.</p>
+    </div>
+    <div class="card model-card" id="renewal-card">
+      <h3>Renewal model <span class="badge alt">time-dependent</span></h3>
+      <div class="model-value" id="renewal-value">—</div>
+      <p class="model-note" id="renewal-note">Fits the gaps between past events (Gamma distribution)
+      and conditions on the time elapsed since the last one — the statistically honest version of
+      “overdue.” Note: at global scale earthquakes <em>cluster</em> (CV &gt; 1), so a long quiet
+      spell usually makes the near-term probability slightly <em>lower</em>, not higher. True
+      “overdue” behavior only emerges on individual faults with quasi-periodic recurrence.</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>Probability vs. time <span class="subtle" id="curve-caption"></span></h3>
+    <canvas id="curve-chart" height="260"></canvas>
+  </section>
+
+  <section class="card">
+    <h3>Magnitude–frequency (Gutenberg–Richter) <span class="subtle" id="gr-caption"></span></h3>
+    <canvas id="gr-chart" height="280"></canvas>
+  </section>
+
+  <section class="card">
+    <h3>Epicenter map <span class="subtle">click to set a local area</span></h3>
+    <canvas id="map-chart" height="380"></canvas>
+  </section>
+
+  <section class="card" id="timeline-section" hidden>
+    <h3>Events in this area <span class="subtle" id="timeline-caption"></span></h3>
+    <canvas id="timeline-chart" height="240"></canvas>
+    <div id="timeline-list"></div>
+  </section>
+
+  <section class="card caveats" id="caveats">
+    <h3>Read this before quoting a number</h3>
+    <ul id="caveat-list"></ul>
+  </section>
+
+  <details class="card about">
+    <summary><h3>About the model</h3></summary>
+    <div class="about-body">
+      <p><strong>Data.</strong> USGS ANSS ComCat (M4.5+, 2000 → Jan 2024, public domain), the
+      ISC-GEM Global Instrumental Catalogue (1900–1999, via the Swiss Re Historical Earthquake
+      Statistics Dataset, CC BY-SA 3.0), and — when online — a live top-up straight from the USGS
+      feed covering everything since. Pre-1900 events (NGDC significant-earthquake database) are
+      shown for context only and never enter the statistics.</p>
+      <p><strong>Completeness.</strong> Rates for magnitude ≥ m are computed only over the years in
+      which the merged catalog is complete at m: M7.5+ from 1900, M6.5+ from 1918, M5.5+ from 1964,
+      M4.5+ from 2000 (ISC-GEM documented thresholds). This is why different magnitudes use
+      different observation windows.</p>
+      <p><strong>Estimators.</strong> Empirical rates carry exact Poisson confidence intervals
+      (Garwood 1936). The Gutenberg–Richter b-value is the Aki–Utsu maximum-likelihood estimate
+      with the Tinti–Mulargia binning correction and Shi–Bolt standard error. Where fewer than
+      three events exist in the window, the global model extrapolates with a tapered
+      Gutenberg–Richter law (Kagan 2002) and local areas use fixed-b scaling — both flagged in the
+      caveats when active. The renewal view fits a Gamma distribution to inter-event times by
+      maximum likelihood and conditions on the open interval.</p>
+      <p>Full methodology, citations, and limitations:
+      <a href="METHODOLOGY.md">METHODOLOGY.md</a>.</p>
+    </div>
+  </details>
+</main>
+
+
+
+<footer>
+  <p>Probabilities describe long-run statistical frequency, not deterministic forecasts.
+  No one can predict individual earthquakes. Data: USGS/ANSS ComCat (public domain),
+  ISC-GEM via Swiss Re (CC BY-SA 3.0), NGDC/WDS.</p>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

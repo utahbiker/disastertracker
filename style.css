@@ -123,3 +123,26 @@ canvas { width: 100%; display: block; }
 
 footer { max-width: 1060px; margin: 0 auto; padding: 0 20px 40px; color: var(--muted); font-size: 12px; }
 footer a { color: var(--accent-2); }
+
+/* ─── master dashboard ─────────────────────────────────────────────── */
+.dash-controls { align-items: start; }
+#hazard-tabs a.tab { text-decoration: none; }
+
+.haz-row { display: grid; grid-template-columns: 190px 1fr 260px; gap: 14px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); }
+@media (max-width: 820px) { .haz-row { grid-template-columns: 130px 1fr; } .haz-row .haz-stats { grid-column: 1 / -1; padding-left: 2px; } }
+.haz-name { font-size: 13.5px; font-weight: 600; }
+.haz-bar { background: var(--panel-2); border-radius: 4px; height: 14px; overflow: hidden; }
+.haz-fill { height: 100%; border-radius: 4px; opacity: 0.85; }
+.haz-stats { font-size: 13px; font-variant-numeric: tabular-nums; }
+.haz-stats b { color: var(--text); }
+.haz-stats .sm, .fact .sm { color: var(--muted); font-size: 12px; }
+.season-badge { font-size: 10px; border-radius: 99px; padding: 1px 7px; margin-left: 8px; letter-spacing: 0.04em; vertical-align: 1px; }
+.season-badge.up { border: 1px solid var(--danger); color: var(--danger); }
+.season-badge.down { border: 1px solid var(--muted); color: var(--muted); }
+
+#events-list { max-height: 340px; overflow-y: auto; font-size: 13px; }
+#events-list .ev { display: grid; grid-template-columns: 92px 150px 1fr 130px; gap: 10px; padding: 5px 2px; border-bottom: 1px solid var(--line); }
+@media (max-width: 820px) { #events-list .ev { grid-template-columns: 92px 1fr 110px; } #events-list .ev .m { display: none; } }
+#events-list .d { color: var(--muted); font-variant-numeric: tabular-nums; }
+#events-list .m { font-weight: 600; }
+#events-list .val { text-align: right; color: var(--accent-2); font-variant-numeric: tabular-nums; }
