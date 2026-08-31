@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 import { project, lonDelta } from '../globe.js';
 import {
   mergeGlobeEvents, GLOBE_QUAKE_MIN_MAG, GLOBE_MAX_EVENTS, GLOBE_WINDOW_DAYS,
-  hazardCode, parseEonetStorms, parseReliefWeb,
+  hazardCode, parseEonetStorms, parseReliefWeb, ssCategory,
 } from '../live.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -148,4 +148,46 @@ test('world-outline.json: sane public-domain coastline data', () => {
     }
   }
   assert.ok(nv > 3000 && nv < 20000, `vertices ${nv}`);
+});
+
+test('event rows carry info + live-tracking links per source', () => {
+  const now = Date.now();
+  const quakes = [{ mag: 7.1, magType: 'mww', lat: 38.1, lon: 142.3, timeMs: now - 3600e3, place: 'Japan', depthKm: 29, pager: 'yellow', tsunami: true, felt: 1234, url: 'https://earthquake.usgs.gov/x' }];
+  const alerts = [{ type: 'TC', level: 'red', lat: 12.4, lon: 124.5, timeMs: now - 7200e3, name: 'Cyclone V', label: 'Tropical cyclone', icon: 'x', country: 'Philippines', from: '2026-08-29', to: '2026-08-31', score: 2.5, severity: 'Cat 4. max wind 120 kt', url: 'https://gdacs.org/r' }];
+  const storms = [{ name: 'Hurricane B', kts: 100, lat: 25, lon: -75, timeMs: now - 9000e3, trackPts: 14, sinceMs: now - 5 * 86400e3, agency: 'NOAA_NHC', url: 'https://nhc.noaa.gov/x' }];
+  const out = mergeGlobeEvents(quakes, alerts, storms, now);
+  assert.equal(out.length, 3);
+  const q = out.find((e) => e.kind === 'EQ');
+  assert.ok(q.info.some(([k, v]) => k === 'Depth' && /29 km — shallow/.test(v)));
+  assert.ok(q.info.some(([k]) => k === 'USGS PAGER'));
+  assert.ok(q.info.some(([k, v]) => k === 'Tsunami'));
+  assert.ok(q.links.some((l) => /USGS event page/.test(l.t) && l.u.includes('usgs.gov')));
+  assert.ok(q.links.some((l) => l.t === 'Map' && l.u.includes('google.com/maps')));
+  const a = out.find((e) => e.title.includes('Cyclone V'));
+  assert.ok(a.info.some(([k, v]) => k === 'Alert level' && /GDACS RED \(score 2.5\)/.test(v)));
+  assert.ok(a.info.some(([k, v]) => k === 'Since' && v === '2026-08-29 → 2026-08-31'));
+  assert.ok(a.links.some((l) => /GDACS event report/.test(l.t)));
+  const s = out.find((e) => e.title === 'Hurricane B');
+  assert.ok(s.info.some(([k, v]) => k === 'Peak winds' && /100 kt .* Category 3/.test(v)));
+  assert.ok(s.info.some(([k, v]) => k === 'Track' && /14 positions/.test(v)));
+  assert.ok(s.links.some((l) => /NOAA_NHC storm tracking/.test(l.t) && l.u.includes('nhc.noaa.gov')));
+});
+
+test('ssCategory: Saffir–Simpson bins', () => {
+  assert.equal(ssCategory(63), 0);
+  assert.equal(ssCategory(64), 1);
+  assert.equal(ssCategory(83), 2);
+  assert.equal(ssCategory(96), 3);
+  assert.equal(ssCategory(113), 4);
+  assert.equal(ssCategory(140), 5);
+});
+
+test('EONET agency source link preferred over the API link', () => {
+  const now = new Date().toISOString();
+  const json = { events: [{ title: 'Hurricane S', link: 'https://eonet.gsfc.nasa.gov/api/v3/events/E1',
+    sources: [{ id: 'NOAA_NHC', url: 'https://www.nhc.noaa.gov/storm' }],
+    geometry: [{ date: now, coordinates: [-70, 22], magnitudeValue: 90, magnitudeUnit: 'kts' }] }] };
+  const out = parseEonetStorms(json);
+  assert.equal(out[0].url, 'https://www.nhc.noaa.gov/storm');
+  assert.equal(out[0].agency, 'NOAA_NHC');
 });
