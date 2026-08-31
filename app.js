@@ -1,5 +1,6 @@
 // disaster-tracker/app.js — UI wiring + charts. All statistics live in engine.js.
 import * as E from './engine.js';
+import { VERSION } from './version.js';
 
 const $ = (id) => document.getElementById(id);
 const fmtPct = (p) => {
@@ -117,6 +118,7 @@ async function usgsTopUp(modernMeta) {
 }
 
 async function init() {
+  $('app-version').textContent = VERSION;
   const [modernRaw, instrRaw, histRaw, completeness] = await Promise.all([
     loadJSON('data/catalog-modern.json'),
     loadJSON('data/catalog-instrumental.json'),

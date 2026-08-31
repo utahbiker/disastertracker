@@ -24,6 +24,10 @@ round out the site. `db/` is an optional, unused-by-the-app Supabase mirror.
 
 ## Rules
 
+- **Bump `version.js` on every change that ships to production** (patch for
+  fixes, minor for features). The version renders next to the page title and
+  is Jake's visual confirmation that a deploy reached tracker.goinwardout.com.
+
 - **Run `node --test test/engine.test.mjs` before every push** (CI runs it too). The
   suite pins special functions to table values and the shipped data to published
   seismological benchmarks — if a data rebuild or engine change moves a benchmark,
