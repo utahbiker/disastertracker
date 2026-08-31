@@ -12,7 +12,7 @@
 // climatology over the forecast window — materially different from 1 only
 // for sub-annual windows.
 
-import { poissonRateCI, poissonProb, fitGammaMLE, gammaCDF } from './engine.js';
+import { poissonRateCI, poissonProb, fitGammaMLE, gammaCDF, fitGPD, gpdSurvival } from './engine.js';
 
 /**
  * Poisson log-linear trend fit on annual counts (IRLS): log mu_y = a + b*x.
@@ -79,16 +79,21 @@ export function decodeImpacts(raw) {
 }
 
 /**
- * Completeness window start (calendar year) for a threshold: the entry with
- * the largest `min` ≤ threshold. Thresholds below the smallest modeled
- * `min` are outside the model — returns null.
+ * Completeness window row for a threshold: the entry with the largest
+ * `min` ≤ threshold. Thresholds below the smallest modeled `min` are
+ * outside the model — returns null.
  */
-export function windowStartYear(threshold, table) {
+export function windowRow(threshold, table) {
   let best = null;
   for (const row of table) {
     if (threshold >= row.min && (best === null || row.min > best.min)) best = row;
   }
-  return best ? best.start : null;
+  return best;
+}
+
+export function windowStartYear(threshold, table) {
+  const row = windowRow(threshold, table);
+  return row ? row.start : null;
 }
 
 const dayOfYearStart = (year) => Math.round((Date.UTC(year, 0, 1) - EPOCH_1900_MS) / DAY_MS);
@@ -152,8 +157,9 @@ export function seasonalFactor(profile, startMs, windowYears) {
  */
 export function assessImpact(imp, { metric, threshold, windowYears, us = false, nowMs = Date.now() }) {
   const table = metric === 'deaths' ? imp.completeness.deaths : imp.completeness.damageK;
-  const startYear = windowStartYear(threshold, table);
-  if (startYear === null) return null;
+  const wrow = windowRow(threshold, table);
+  if (wrow === null) return null;
+  const startYear = wrow.start;
   const startDay = dayOfYearStart(startYear);
   const endDay = imp.meta.dataEndDay;
   const Tyears = (endDay - startDay) / DAYS_PER_YEAR;
@@ -175,21 +181,34 @@ export function assessImpact(imp, { metric, threshold, windowYears, us = false, 
     qualifying.push(i);
   }
 
-  // trend multiplier — fitted on the aggregate annual counts of qualifying
-  // events (the exact configuration validated by the walk-forward backtest),
-  // applied uniformly so the per-hazard decomposition stays consistent
+  // trend multiplier — fitted ONCE PER COMPLETENESS WINDOW, on the annual
+  // counts of events at the window's BASE threshold (wrow.min: the density
+  // regime the walk-forward backtest validated), then applied uniformly to
+  // every threshold sharing that window. A per-threshold fit would flip on
+  // and off across a qualifying-count gate as the slider moves, producing
+  // non-monotone exceedance probabilities; a per-window fit is a single
+  // multiplier on a monotone family of rates, so ordering is preserved.
   const startCalYear = startYear;
   const nowYear = new Date(nowMs).getUTCFullYear();
   const lastDataYear = new Date(msOfDay(endDay)).getUTCFullYear() - 1; // last complete year
   let trend = 1;
-  if (lastDataYear - startCalYear + 1 >= 15) {
-    const annual = [];
-    for (let y = startCalYear; y <= lastDataYear; y++) annual.push(0);
-    for (const i of qualifying) {
+  const baseVals = []; // metric values of all base-threshold events in window
+  {
+    const annual = new Array(Math.max(0, lastDataYear - startCalYear + 1)).fill(0);
+    let nBase = 0;
+    for (let i = 0; i < imp.n; i++) {
+      if (imp.day[i] < startDay || imp.day[i] >= endDay) continue;
+      const v = imp.value(i, metric, us);
+      if (v < wrow.min) continue;
+      baseVals.push(v);
       const y = new Date(msOfDay(imp.day[i])).getUTCFullYear();
-      if (y >= startCalYear && y <= lastDataYear) annual[y - startCalYear]++;
+      if (y >= startCalYear && y <= lastDataYear) { annual[y - startCalYear]++; nBase++; }
     }
-    trend = poissonTrendMultiplier(annual, startCalYear, nowYear);
+    // still refuse to fit a trend to a handful of events (sparse windows,
+    // e.g. US base thresholds): trend stays 1 for the WHOLE window then.
+    if (lastDataYear - startCalYear + 1 >= 15 && nBase >= 30) {
+      trend = poissonTrendMultiplier(annual, startCalYear, nowYear);
+    }
   }
 
   // floor for the seasonal climatology: a level with enough events for a
@@ -214,17 +233,76 @@ export function assessImpact(imp, { metric, threshold, windowYears, us = false, 
   }
   for (const ph of perHazard) ph.share = lambdaEffTotal > 0 ? (ph.lambda * ph.seasonal * trend) / lambdaEffTotal : 0;
 
-  const ciTotal = poissonRateCI(total, Tyears, 0.95);
+  // EVT severity tail (METHODOLOGY Part V). The GPD SHAPE (ξ, β) is fitted
+  // once on the hundreds of exceedances above the tail anchor (deaths ≥
+  // 1,000 / damage ≥ $1B). Within this completeness window the model then
+  // switches from empirical counting to the smoothed tail at a FIXED switch
+  // point x* — the 10th-largest event in the window — with the tail
+  // RE-ANCHORED there via GPD threshold stability (β* = β + ξ·(x* − u)) and
+  // its level tied to the window's own empirical rate at x* (n*/T). The
+  // hand-off is therefore continuous by construction, and the whole curve
+  // (staircase down to x*, smooth GPD survival beyond it) is monotone.
+  // Below 10 events, counting noise dominates (a Garwood CI on 8 events
+  // spans ~×3); the 300-to-700-exceedance shape estimate takes over there.
+  let method = 'empirical';
+  let lambdaHeadline = lambdaEffTotal;
+  let tailInfo = null;
   const seasonalNet = lambdaTotal > 0 ? lambdaEffTotal / (lambdaTotal * trend) : 1;
+  if (baseVals.length >= 10) {
+    const sorted = [...baseVals].sort((a, b) => b - a);
+    const xStar = sorted[9];
+    if (threshold >= xStar) {
+      const tm = cachedTailFit(imp, { metric, us });
+      if (tm) {
+        const betaStar = tm.beta + tm.xi * (xStar - tm.u);
+        if (betaStar > 0) {
+          let nStar = 0;
+          for (const v of sorted) { if (v >= xStar) nStar++; else break; }
+          const lambdaStar = nStar / Tyears;
+          method = 'evt-tail';
+          lambdaHeadline = lambdaStar * gpdSurvival(threshold - xStar, tm.xi, betaStar) * seasonalNet * trend;
+          tailInfo = { xi: tm.xi, beta: betaStar, u: xStar, nAnchor: nStar, fitU: tm.u, fitN: tm.nAnchor };
+        }
+      }
+    }
+  }
+
+  const ciTotal = poissonRateCI(total, Tyears, 0.95);
+  let probLoRate = method === 'evt-tail' ? Math.min(ciTotal.lo * seasonalNet * trend, lambdaHeadline / 3) : ciTotal.lo * seasonalNet * trend;
+  let probHiRate = method === 'evt-tail' ? Math.max(ciTotal.hi * seasonalNet * trend, lambdaHeadline * 3) : ciTotal.hi * seasonalNet * trend;
+
+  // Exceedance-coherence floor: P(≥x) can never sit below P(≥y) for y > x —
+  // any valid rate estimate at a HIGHER threshold bounds this one from
+  // below. The completeness-window seams (e.g. deaths 1,000: the 1930→
+  // window opens there) can violate that ordering, because a longer window
+  // may show a higher rate for rarer events than the recent window shows
+  // for commoner ones (that gap IS the non-stationarity the trend model
+  // measures at dense thresholds). So each threshold is floored by the
+  // model's own assessment at the next window base above it. The floor is
+  // recursive (≤ 3 deep) and is a no-op at the window bases themselves, so
+  // every backtest-validated headline is unchanged.
+  let cohered = false;
+  let nextBase = null;
+  for (const rowB of table) if (rowB.min > threshold && (nextBase === null || rowB.min < nextBase)) nextBase = rowB.min;
+  if (nextBase !== null) {
+    const above = assessImpact(imp, { metric, threshold: nextBase, windowYears, us, nowMs });
+    if (above && above.lambdaHeadline > lambdaHeadline) {
+      cohered = true;
+      lambdaHeadline = above.lambdaHeadline;
+      probLoRate = Math.max(probLoRate, above.probLoRate);
+      probHiRate = Math.max(probHiRate, above.probHiRate);
+    }
+  }
+
   return {
-    trend,
+    trend, method, tail: tailInfo, cohered,
     metric, threshold, windowYears, us,
     windowStartYear: startYear, Tyears, n: total,
     lambda: lambdaTotal, lambdaEff: lambdaEffTotal, ci95: ciTotal,
-    seasonalNet,
-    prob: poissonProb(lambdaEffTotal, windowYears),
-    probLo: poissonProb(ciTotal.lo * seasonalNet * trend, windowYears),
-    probHi: poissonProb(ciTotal.hi * seasonalNet * trend, windowYears),
+    seasonalNet, lambdaHeadline, probLoRate, probHiRate,
+    prob: poissonProb(lambdaHeadline, windowYears),
+    probLo: poissonProb(probLoRate, windowYears),
+    probHi: poissonProb(probHiRate, windowYears),
     perHazard: perHazard.sort((a, b) => b.share - a.share),
     lastIdx: lastAny >= 0 ? lastAny : null,
     maxObserved: maxVal, maxIdx: maxVal > 0 ? maxIdx : null,
@@ -283,5 +361,54 @@ export function assessRenewal(imp, { metric, threshold, windowYears, us = false,
     meanGapYears: fit.mean, cv: fit.cv, k: fit.k,
     elapsedYears, lastDay: days[days.length - 1],
     prob,
+  };
+}
+
+
+// EVT tail anchors: severity level whose exceedances feed the GPD fit, using
+// that anchor's own completeness window. US deaths deliberately have NO
+// anchor — too few exceedances for an honest tail fit (fitGPD refuses < 40).
+const TAIL_ANCHORS = {
+  deaths: { u: 1000 },
+  damageK: { u: 1e6 }, // $1B adjusted
+};
+
+// GPD fits are grid searches over hundreds of exceedances; the fit depends
+// only on (metric, scope, data snapshot), so memoize per decoded catalog.
+const tailFitCache = new WeakMap();
+function cachedTailFit(imp, { metric, us }) {
+  let byKey = tailFitCache.get(imp);
+  if (!byKey) { byKey = new Map(); tailFitCache.set(imp, byKey); }
+  const key = `${metric}|${us ? 1 : 0}`;
+  if (!byKey.has(key)) byKey.set(key, tailModel(imp, { metric, us }));
+  return byKey.get(key);
+}
+
+/**
+ * Tail model for severities where direct counting is thin: annual exceedance
+ * rate λ(≥x) = λ(≥u) · S_GPD(x − u), fitted on the anchor's exceedances.
+ * Returns null when the anchor cannot support a fit.
+ */
+export function tailModel(imp, { metric, us = false }) {
+  const anchor = metric === 'deaths' ? TAIL_ANCHORS.deaths : TAIL_ANCHORS.damageK;
+  const table = metric === 'deaths' ? imp.completeness.deaths : imp.completeness.damageK;
+  const startYear = windowStartYear(anchor.u, table);
+  if (startYear === null) return null;
+  const startDay = Math.round((Date.UTC(startYear, 0, 1) - EPOCH_1900_MS) / DAY_MS);
+  const excesses = [];
+  let nAnchor = 0;
+  for (let i = 0; i < imp.n; i++) {
+    if (imp.day[i] < startDay || imp.day[i] >= imp.meta.dataEndDay) continue;
+    const v = imp.value(i, metric, us);
+    if (v >= anchor.u) { nAnchor++; excesses.push(v - anchor.u); }
+  }
+  const fit = fitGPD(excesses);
+  if (!fit) return null;
+  const Tyears = (imp.meta.dataEndDay - startDay) / 365.25;
+  return {
+    u: anchor.u, startYear, nAnchor, Tyears,
+    lambdaU: nAnchor / Tyears,
+    xi: fit.xi, beta: fit.beta,
+    rate: (x) => (x <= anchor.u ? nAnchor / Tyears : (nAnchor / Tyears) * gpdSurvival(x - anchor.u, fit.xi, fit.beta)),
   };
 }
