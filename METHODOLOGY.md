@@ -484,3 +484,35 @@ bucketing forecasts against observed frequencies. The same run executes in CI
 
 - Brier, G. W. (1950). Verification of forecasts expressed in terms of probability. *Mon. Wea. Rev.* 78.
 - Gneiting, T., & Raftery, A. E. (2007). Strictly proper scoring rules, prediction, and estimation. *JASA* 102.
+
+## 19b. The renewal ("overdue") hypothesis — scored, shipped as comparison, adoption pre-registered
+
+Prompted by the observation that no ≥100,000-death event has occurred since
+2010 (16+ quiet years against a 4.6-year historical mean gap), model **M4**
+fits a Gamma renewal distribution to the training inter-event gaps and
+conditions on elapsed time. Walk-forward results:
+
+| Target | best prior model | M4 renewal |
+|---|---|---|
+| deaths ≥ 100 | +7.7% (M2) | +1.3% |
+| deaths ≥ 1,000 | +0.6% | **+1.7%** |
+| deaths ≥ 10,000 | −2.0% | **+0.8%** (only model above baseline) |
+| damage ≥ $10B | +3.6% | +0.0% |
+
+Renewal conditioning helps precisely at sparse, high-severity thresholds —
+where gap structure carries information — and hurts at dense ones, where
+seasonality and trend dominate. At the ≥100k threshold specifically, the
+fitted gaps are mildly quasi-periodic (CV ≈ 0.8 from 24 gaps), so the
+conditional probability given the current quiet spell runs ~1.5× the
+memoryless number.
+
+**Status: comparison view, not headline.** The dashboard's "Time since last"
+panel shows the renewal number beside the validated model wherever ≥ 15 gaps
+exist. Because promoting M4 for "sparse thresholds" chosen from these same
+scores would be selection on the test set, adoption is **pre-registered**
+instead: if M4's advantage at deaths ≥ 1,000 and ≥ 10,000 persists when the
+EM-DAT catalog is refreshed (2024→present is genuinely out-of-sample), M4
+becomes the headline at thresholds whose baseline monthly probability is
+below 50%. The advantage is also sensitive to the evaluation range (present
+on 2010–2024, absent on 2012–2024) — additional evidence that it is a weak
+signal requiring out-of-sample confirmation before it may drive the headline.

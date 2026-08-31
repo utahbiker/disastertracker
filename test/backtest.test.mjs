@@ -23,6 +23,10 @@ test('walk-forward backtest: shipped model beats the flat baseline where it clai
   assert.ok(d100.M2.brier <= d100.M1.brier + 1e-9, `M2 ${d100.M2.brier} vs M1 ${d100.M1.brier}`);
   // nothing may be catastrophically worse than baseline anywhere
   for (const [name, t] of Object.entries(r)) {
-    for (const k of ['M1', 'M2']) assert.ok(t[k].bss > -0.08, `${name} ${k} BSS=${t[k].bss}`);
+    for (const k of ['M1', 'M2', 'M4']) assert.ok(t[k].bss > -0.08, `${name} ${k} BSS=${t[k].bss}`);
   }
+  // Note: the renewal model's sparse-threshold advantage (METHODOLOGY § 19b)
+  // is sensitive to the evaluation range (it appears on 2010-2024, flips on
+  // 2012-2024), so no ordering is asserted here — the pre-registered adoption
+  // test runs on refreshed, genuinely out-of-sample data instead.
 });

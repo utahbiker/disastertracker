@@ -106,7 +106,35 @@ function renderAll() {
   renderEvents(a);
   renderExtremes();
   renderGiants();
+  renderRenewal(a);
   writeHash();
+}
+
+function renderRenewal(a) {
+  const box = $('renewal-panel');
+  const r = I.assessRenewal(state.imp, {
+    metric: state.metric, threshold: state.threshold,
+    windowYears: state.windowYears, us: state.us,
+  });
+  if (!r.ok) {
+    $('renewal-caption').textContent = '';
+    box.innerHTML = `<p class="hint">Not enough inter-event history at this severity and scope to fit a renewal model honestly (${r.nGaps ?? 0} gaps; 15 required). The memoryless Poisson number above is the defensible answer here.</p>`;
+    return;
+  }
+  const character = r.cv > 1.15
+    ? { label: 'clustered', text: 'events bunch together — a long quiet spell does NOT raise the near-term probability; if anything it lowers it slightly' }
+    : r.cv < 0.85
+      ? { label: 'quasi-periodic', text: 'gaps are more regular than random — elapsed quiet time genuinely raises the conditional probability' }
+      : { label: 'near-memoryless', text: 'gaps look like a random (Poisson) process — elapsed time carries little information' };
+  const ratio = a && a.prob > 0 ? r.prob / a.prob : null;
+  $('renewal-caption').textContent = `Gamma renewal fit to ${r.nGaps} observed gaps · a comparison view — the headline stays the backtest-validated model`;
+  box.innerHTML = `
+    <div class="prob-facts" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); display:grid; gap:12px">
+      <div class="fact">quiet for <b>${r.elapsedYears.toFixed(1)} years</b><br><span class="sm">vs mean gap ${r.meanGapYears < 1 ? (r.meanGapYears * 365.25).toFixed(0) + ' days' : r.meanGapYears.toFixed(1) + ' years'} (last: ${fmtDate(r.lastDay)}; catalog ends ${state.imp.meta.dataEnd})</span></div>
+      <div class="fact">gap pattern: <b>${character.label}</b> (CV ${r.cv.toFixed(2)})<br><span class="sm">${character.text}</span></div>
+      <div class="fact">renewal says <b>${fmtPct(r.prob)}</b> within ${fmtWindow(state.windowYears).slice(1)}<br><span class="sm">vs ${a ? fmtPct(a.prob) : '—'} from the headline model${ratio && Math.abs(ratio - 1) > 0.1 ? ` — the “overdue” reading is ${ratio > 1 ? 'higher' : 'lower'} (×${ratio.toFixed(2)})` : ' — the two agree'}</span></div>
+    </div>
+    <p class="hint">CV measured from ${r.nGaps} gaps carries real uncertainty (CV = 1 is often within its error), and a declining event rate can masquerade as gap regularity. Walk-forward backtesting scores this conditioning as model M4 (METHODOLOGY Part IV); it becomes the headline only if it wins.</p>`;
 }
 
 function renderExtremes() {
