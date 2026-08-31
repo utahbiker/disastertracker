@@ -11,7 +11,7 @@ Two surfaces:
 - **Master dashboard** (`index.html`) — all natural hazards combined, filtered by impact
   severity (death toll or CPI-adjusted economic damage), worldwide or US scope, with
   per-hazard risk decomposition, seasonality, and frequency–severity curves. Built on
-  EM-DAT (13,571 physical events, 1900→2024).
+  EM-DAT (14,166 physical events, 1900→2026).
 - **Earthquake deep-dive** (`earthquake.html`) — magnitude/location/time-window
   probabilities on the instrumental seismic catalog (195k events, live USGS top-up).
 

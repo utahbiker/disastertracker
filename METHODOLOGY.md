@@ -272,10 +272,14 @@ statistical object is a marked multi-hazard point process filtered on impact mar
 
 **EM-DAT**, the international disaster database (CRED / UCLouvain, Brussels —
 www.emdat.be; Delforge et al. 2025), public table including historical events,
-snapshot **2024-03-26** (obtained via the public copy committed in
-`com-480-data-visualization/project-2024-DisasterClass`; EM-DAT terms: free for
-non-commercial use with attribution — to refresh or re-license, register at
-public.emdat.be and re-run `etl/build-impacts.mjs`).
+snapshot **2026-08-31** (registered non-commercial download from
+public.emdat.be; the raw table is not redistributed — the repo carries only
+the aggregated derived extract. EM-DAT terms: free for non-commercial use
+with attribution — to refresh, register at public.emdat.be and re-run
+`etl/build-impacts.mjs`). The statistical record is truncated at
+**2026-04-30**: monthly physical-event counts run at the long-run pace
+(~24–33/month) through April 2026 and collapse after (8, 6, 12, 0) — EM-DAT
+entry lag, so the trailing months are excluded from every rate.
 
 Transformations (see `etl/build-impacts.mjs`):
 
@@ -287,7 +291,7 @@ Transformations (see `etl/build-impacts.mjs`):
   country; rows sharing a `DisNo.` prefix are aggregated (impacts summed) so
   "an event killing ≥ X" means the physical event (the 2004 Indian Ocean
   tsunami is one event with ~226k deaths across 12+ country rows, not 12
-  smaller events). 26,443 rows → 13,571 physical events, 1900 → 2024-02.
+  smaller events). 27,867 rows → 14,166 physical events, 1900 → 2026-04.
 - **US scope** keeps each event's US-portion impacts (ISO USA + PRI, VIR, GUM,
   ASM, MNP — Hurricane Maria's Puerto Rico toll belongs to US mode).
 - **Damages** use EM-DAT's CPI-adjusted series (≈ 2024 US$).
@@ -548,6 +552,20 @@ becomes the headline at thresholds whose baseline monthly probability is
 below 50%. The advantage is also sensitive to the evaluation range (present
 on 2010–2024, absent on 2012–2024) — additional evidence that it is a weak
 signal requiring out-of-sample confirmation before it may drive the headline.
+
+**Outcome of the pre-registered test (2026-08-31 refresh).** The EM-DAT
+refresh delivered 26 genuinely out-of-sample months (2024-03 → 2026-04).
+Walk-forward scores on those months alone: at deaths ≥ 1,000 M4 was the
+best model (+0.8% BSS, only model above baseline); at deaths ≥ 10,000 M4
+was the *worst* model (−0.95%, on 2 event-months). The criterion required
+the advantage to persist at **both** thresholds, so **M4 is NOT promoted:
+the headline stays Poisson + seasonality + trend, and renewal remains the
+labeled comparison view.** (On the full extended 2010→2026 range M4 is
++1.6% at ≥ 1k and +0.6% at ≥ 10k — still suggestive, but that range
+overlaps the data on which M4 was originally selected, which is exactly
+what the pre-registration exists to discount.) The same criterion carries
+forward to the next EM-DAT refresh: two consecutive out-of-sample windows
+in which M4 leads at both sparse thresholds would justify promotion.
 
 ---
 

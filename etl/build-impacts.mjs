@@ -6,11 +6,13 @@
 // CRED schema, "DisNo." era).
 //
 // Source used for the committed build: the full EM-DAT public table
-// including historical events, snapshot 2024-03-26, as committed in
-// github.com/com-480-data-visualization/project-2024-DisasterClass
-// (data/emdat_data.csv). EM-DAT is © CRED / UCLouvain, free for
-// non-commercial use — see README § Data licensing. To refresh: register
-// at public.emdat.be, download the public table, re-run this ETL.
+// including historical events, downloaded 2026-08-31 from public.emdat.be
+// (registered non-commercial access; xlsx converted to CSV verbatim).
+// EM-DAT is © CRED / UCLouvain, free for non-commercial use — see README
+// § Data licensing; the raw table is NOT redistributed in this repo, only
+// this aggregated derived extract. To refresh: register at
+// public.emdat.be, download the public table incl. historical events,
+// re-run this ETL with --snapshot and --dataend.
 //
 // Key transformations:
 //   - Natural disasters only; the Biological subgroup (epidemics,
@@ -23,7 +25,15 @@
 //     totals so the dashboard can scope to the United States.
 //   - Damages use EM-DAT's CPI-adjusted series ('000 US$).
 //
-// Usage: node etl/build-impacts.mjs --emdat /path/to/emdat_data.csv [--out data]
+// Usage: node etl/build-impacts.mjs --emdat /path/to/emdat_data.csv
+//          [--out data] [--snapshot YYYY-MM-DD] [--dataend YYYY-MM-DD]
+//
+// --dataend is the statistical truncation date: EM-DAT entry lag leaves the
+// trailing months undercounted (verify against the monthly event counts —
+// pick the last month whose count is in line with the long-run monthly
+// mean). For the 2026-08-31 snapshot, monthly physical-event counts run
+// normal (~24-33/mo) through 2026-04 and collapse after (8, 6, 12, 0), so
+// the committed build truncates at 2026-04-30.
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -123,10 +133,13 @@ for (let i = 1; i < rows.length; i++) {
 const list = [...events.values()].sort((a, b) => a.day - b.day);
 console.log(`physical events: ${list.length} (skipped: ${skippedTech} technological, ${skippedBio} biological, ${skippedOther} other)`);
 
-// snapshot edge: the source export is dated 2024-03-26; recent months are
-// subject to entry lag, so the statistical record is truncated a month back.
-const DATA_END = '2024-02-29';
-const dataEndDay = dayOf(2024, 2, 29);
+// snapshot edge: recent months are subject to EM-DAT entry lag, so the
+// statistical record is truncated where the monthly counts stop looking
+// complete (see header comment).
+const SNAPSHOT = args.snapshot ?? '2026-08-31';
+const DATA_END = args.dataend ?? '2026-04-30';
+const [deY, deM, deD] = DATA_END.split('-').map(Number);
+const dataEndDay = dayOf(deY, deM, deD) + 1; // exclusive end: day after DATA_END
 
 // completeness windows chosen from the per-decade rate stabilization
 // analysis (see METHODOLOGY.md § Multi-hazard impact model): the window for
@@ -148,7 +161,8 @@ const completeness = {
 
 const out = {
   meta: {
-    source: 'EM-DAT, CRED / UCLouvain, Brussels, Belgium — www.emdat.be. Public table incl. historical events, snapshot 2024-03-26 (via github.com/com-480-data-visualization/project-2024-DisasterClass). Non-commercial use.',
+    source: `EM-DAT, CRED / UCLouvain, Brussels, Belgium — www.emdat.be. Public table incl. historical events, snapshot ${SNAPSHOT} (registered non-commercial download). Non-commercial use.`,
+    snapshot: SNAPSHOT,
     scope: 'Natural physical hazards only; Biological subgroup (epidemics, infestations) excluded. Rows aggregated from per-country impacts to physical events by DisNo prefix.',
     hazards: HAZARDS,
     dataStart: '1900-01-01',
