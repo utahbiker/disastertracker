@@ -78,7 +78,92 @@ async function init() {
   $('data-status').innerHTML = `${fmtInt(raw.n)} impact events (EM-DAT, 1900 → ${raw.meta.dataEnd}) + deep-history records to 2150 BC (NCEI quakes) and the early Holocene (Smithsonian GVP eruptions) · impact catalog is a fixed snapshot (see caveats) · <a href="earthquake.html" style="color:var(--accent-2)">earthquake deep-dive is live-updating →</a>`;
   wireControls();
   readHash();
+  wireDetailModal();
   renderAll();
+}
+
+// ─── event-detail popup ──────────────────────────────────────────────────
+// Detail records (data/impact-details.json) exist for every LABELED event
+// (deaths ≥ 1,000 or damage ≥ $10B) — the ones the UI names. Lazy-loaded
+// on first open. Deep-history rows (NCEI/GVP) render from their own data.
+
+let detailsCache = null;
+async function loadDetails() {
+  if (!detailsCache) {
+    try { detailsCache = (await (await fetch('data/impact-details.json')).json()).details; }
+    catch { detailsCache = {}; }
+  }
+  return detailsCache;
+}
+
+function wireDetailModal() {
+  $('detail-close').onclick = closeDetail;
+  $('detail-overlay').addEventListener('click', (e) => { if (e.target === $('detail-overlay')) closeDetail(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDetail(); });
+}
+function closeDetail() { $('detail-overlay').hidden = true; }
+function showDetail(html) { $('detail-body').innerHTML = html; $('detail-overlay').hidden = false; }
+
+const dRow = (label, value) => (value ? `<div class="det-row"><span class="det-k">${label}</span><span>${value}</span></div>` : '');
+const durationText = (d0, d1) => {
+  const days = d1 - d0;
+  if (days <= 1) return '';
+  if (days < 60) return ` · ${days} days`;
+  return ` · ${(days / 30.44).toFixed(1)} months`;
+};
+
+async function openImpactDetail(idx) {
+  const det = (await loadDetails())[idx];
+  const imp = state.imp;
+  const haz = imp.meta.hazards[imp.type[idx]];
+  const title = imp.label[idx] || `${haz} — ${fmtDate(imp.day[idx]).slice(0, 4)}`;
+  const parts = [];
+  parts.push(`<h2>${title}</h2>`);
+  parts.push(`<div class="det-chips"><span class="det-chip" style="border-color:${HAZ_COLORS[imp.type[idx]]};color:${HAZ_COLORS[imp.type[idx]]}">${haz}</span>${det?.st ? `<span class="det-chip">${det.st}</span>` : ''}${det?.as ? `<span class="det-chip">+ ${det.as}</span>` : ''}</div>`);
+  parts.push(dRow('When', `${fmtDate(imp.day[idx])}${det?.end ? ` → ${fmtDate(det.end)}${durationText(imp.day[idx], det.end)}` : ''}`));
+  if (det?.mag) parts.push(dRow('Magnitude', `${det.mag} ${det.ms || ''}`));
+  if (det?.loc) parts.push(dRow('Where', det.loc));
+  if (det?.org) parts.push(dRow('Trigger', det.org));
+  const impacts = [];
+  if (imp.deaths[idx] > 0) impacts.push(`<b>${fmtInt(imp.deaths[idx])}</b> deaths`);
+  if (det?.inj) impacts.push(`${fmtInt(det.inj)} injured`);
+  if (det?.hml) impacts.push(`${fmtInt(det.hml)} homeless`);
+  if (det?.aff) impacts.push(`${fmtInt(det.aff)} affected`);
+  if (impacts.length) parts.push(dRow('Human toll', impacts.join(' · ')));
+  const dmg = [];
+  if (imp.dmgK[idx] > 0) dmg.push(`<b>${fmtDamage(imp.dmgK[idx])}</b> total`);
+  if (det?.insK) dmg.push(`${fmtDamage(det.insK)} insured`);
+  if (dmg.length) parts.push(dRow('Damage', dmg.join(' · ') + ' <span class="src">(CPI-adjusted)</span>'));
+  const flags = [];
+  if (det?.dc) flags.push('official disaster declaration');
+  if (det?.ap) flags.push('international appeal');
+  if (flags.length) parts.push(dRow('Response', flags.join(' · ')));
+  if (det?.bc && det.bc.length > 1) {
+    parts.push(`<div class="det-k" style="margin-top:10px">By country (${imp.nC[idx]} affected)</div>
+      <table class="det-table"><tr><th></th><th>deaths</th><th>damage</th></tr>` +
+      det.bc.map((r) => `<tr><td>${r.c}</td><td>${r.d ? fmtInt(r.d) : '—'}</td><td>${r.k ? fmtDamage(r.k) : '—'}</td></tr>`).join('') +
+      (imp.nC[idx] > det.bc.length ? `<tr><td class="src" colspan="3">+ ${imp.nC[idx] - det.bc.length} more countries</td></tr>` : '') +
+      '</table>');
+  }
+  parts.push('<p class="src det-src">Source: EM-DAT, CRED / UCLouvain — www.emdat.be (non-commercial use). Impacts aggregated across affected countries.</p>');
+  showDetail(parts.join(''));
+}
+
+function openDeepDetail(r) {
+  const parts = [];
+  parts.push(`<h2>${r.name || r.kind}</h2>`);
+  parts.push(`<div class="det-chips"><span class="det-chip">${r.kind}</span><span class="det-chip">${D.eraLabel(r.y)}</span></div>`);
+  if (r.kind === 'Earthquake') {
+    if (r.mag) parts.push(dRow('Magnitude', `M ${r.mag.toFixed(1)}${r.tsu ? ' — generated a tsunami' : ''}`));
+    else if (r.tsu) parts.push(dRow('Tsunami', 'yes'));
+    if (r.deaths) parts.push(dRow('Human toll', `<b>${fmtInt(r.deaths)}</b> deaths <span class="src">(documentary estimate${r.y < 1900 ? ' — pre-instrumental era' : ''})</span>`));
+    parts.push('<p class="src det-src">Source: NCEI/WDS Global Significant Earthquake Database (NOAA, public domain). Pre-1900 tolls are documentary estimates and never feed the probability model (METHODOLOGY § 16).</p>');
+  } else {
+    parts.push(dRow('Explosivity', `VEI ${r.vei} — ${r.vei >= 7 ? 'super-colossal: global climatic effects, ~1 per 370 years' : 'colossal'}`));
+    if (r.deaths) parts.push(dRow('Human toll', `<b>${fmtInt(r.deaths)}</b> deaths`));
+    parts.push('<p class="src det-src">Source: Smithsonian Global Volcanism Program, Volcanoes of the World.</p>');
+  }
+  showDetail(parts.join(''));
 }
 
 function assessment() {
@@ -167,16 +252,24 @@ function renderGiants() {
         y: new Date(I.msOfDay(imp.day[i])).getUTCFullYear(),
         kind: imp.meta.hazards[imp.type[i]],
         name: imp.label[i] || '', detail: '', deaths: imp.deaths[i], source: 'EM-DAT',
+        impIdx: i,
       });
     }
   }
   const rows = D.documentedCatastrophes(state.deep, { minDeaths: 100000, extra });
-  $('giants-caption').textContent = `every documented event with ≥100,000 deaths, plus all VEI-7 eruptions · ${D.eraLabel(rows[0].y)} → present · pre-1900 tolls are documentary estimates`;
-  $('giants-list').innerHTML = rows.slice().reverse().map((r) => `
-    <div class="ev"><span class="d">${D.eraLabel(r.y)}</span>
+  $('giants-caption').textContent = `every documented event with ≥100,000 deaths, plus all VEI-7 eruptions · ${D.eraLabel(rows[0].y)} → present · pre-1900 tolls are documentary estimates · click any event for details`;
+  const shown = rows.slice().reverse();
+  $('giants-list').innerHTML = shown.map((r, k) => `
+    <div class="ev ev-click" data-k="${k}"><span class="d">${D.eraLabel(r.y)}</span>
       <span class="m" style="color:${r.kind === 'Eruption' ? HAZ_COLORS[7] : r.kind === 'Earthquake' ? HAZ_COLORS[0] : HAZ_COLORS[3]}">${r.kind}</span>
       <span>${r.name}${r.detail ? ` <span class="src">${r.detail}</span>` : ''} <span class="src">${r.source}</span></span>
       <span class="val">${r.deaths ? fmtInt(r.deaths) + ' deaths' : '—'}</span></div>`).join('');
+  for (const el of $('giants-list').querySelectorAll('.ev-click')) {
+    el.addEventListener('click', () => {
+      const r = shown[Number(el.dataset.k)];
+      if (r.impIdx !== undefined) openImpactDetail(r.impIdx); else openDeepDetail(r);
+    });
+  }
 }
 
 function renderHeadline(a) {
@@ -206,13 +299,18 @@ function renderHeadline(a) {
     const i = a.lastIdx;
     const imp = state.imp;
     const val = imp.value(i, state.metric, state.us);
-    facts.push(`<div class="fact">most recent: <b>${fmtDate(imp.day[i])}</b> — ${imp.label[i] || imp.meta.hazards[imp.type[i]]}<br><span class="sm">${state.metric === 'deaths' ? fmtInt(val) + ' deaths' : fmtDamage(val)}</span></div>`);
+    const name = imp.label[i] || imp.meta.hazards[imp.type[i]];
+    facts.push(`<div class="fact">most recent: <b>${fmtDate(imp.day[i])}</b> — ${imp.label[i] ? `<span class="det-link" data-idx="${i}">${name}</span>` : name}<br><span class="sm">${state.metric === 'deaths' ? fmtInt(val) + ' deaths' : fmtDamage(val)}</span></div>`);
   }
   if (a.maxIdx != null) {
     const i = a.maxIdx;
-    facts.push(`<div class="fact"><span class="sm">largest on record in scope: ${state.imp.label[i] || state.imp.meta.hazards[state.imp.type[i]]} (${fmtDate(state.imp.day[i]).slice(0, 4)}) — ${state.metric === 'deaths' ? fmtInt(a.maxObserved) + ' deaths' : fmtDamage(a.maxObserved)}</span></div>`);
+    const name = state.imp.label[i] || state.imp.meta.hazards[state.imp.type[i]];
+    facts.push(`<div class="fact"><span class="sm">largest on record in scope: ${state.imp.label[i] ? `<span class="det-link" data-idx="${i}">${name}</span>` : name} (${fmtDate(state.imp.day[i]).slice(0, 4)}) — ${state.metric === 'deaths' ? fmtInt(a.maxObserved) + ' deaths' : fmtDamage(a.maxObserved)}</span></div>`);
   }
   $('prob-facts').innerHTML = facts.join('');
+  for (const el of $('prob-facts').querySelectorAll('.det-link')) {
+    el.addEventListener('click', () => openImpactDetail(Number(el.dataset.idx)));
+  }
 }
 
 function renderHazards(a) {
@@ -414,11 +512,15 @@ function renderEvents(a) {
   $('events-caption').textContent = `${fmtInt(a.n)} events ≥ this severity in the complete record · showing latest ${rows.length} (record ends ${imp.meta.dataEnd})`;
   box.innerHTML = rows.map((i) => {
     const v = imp.value(i, state.metric, state.us);
-    return `<div class="ev"><span class="d">${fmtDate(imp.day[i])}</span>
+    const named = !!imp.label[i];
+    return `<div class="ev${named ? ' ev-click' : ''}"${named ? ` data-idx="${i}"` : ''}><span class="d">${fmtDate(imp.day[i])}</span>
       <span class="m" style="color:${HAZ_COLORS[imp.type[i]]}">${imp.meta.hazards[imp.type[i]]}</span>
       <span>${imp.label[i] || '—'}</span>
       <span class="val">${state.metric === 'deaths' ? fmtInt(v) + ' deaths' : fmtDamage(v)}</span></div>`;
   }).join('');
+  for (const el of box.querySelectorAll('.ev-click')) {
+    el.addEventListener('click', () => openImpactDetail(Number(el.dataset.idx)));
+  }
 }
 
 // ─── controls ────────────────────────────────────────────────────────────

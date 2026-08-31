@@ -90,6 +90,12 @@ const C = {
   type: need('Disaster Type'), name: need('Event Name'), iso: need('ISO'), country: need('Country'),
   sy: need('Start Year'), sm: need('Start Month'), sd: need('Start Day'),
   deaths: need('Total Deaths'), dmgAdj: need("Total Damage, Adjusted ('000 US$)"),
+  // detail fields (data/impact-details.json)
+  subtype: need('Disaster Subtype'), location: need('Location'), origin: need('Origin'),
+  assoc: need('Associated Types'), mag: need('Magnitude'), magScale: need('Magnitude Scale'),
+  ey: need('End Year'), em: need('End Month'), ed: need('End Day'),
+  injured: need('No. Injured'), affected: need('Total Affected'), homeless: need('No. Homeless'),
+  insAdj: need("Insured Damage, Adjusted ('000 US$)"), appeal: need('Appeal'), decl: need('Declaration'),
 };
 
 // "United States" scope includes territories (Hurricane Maria's Puerto Rico
@@ -115,6 +121,10 @@ for (let i = 1; i < rows.length; i++) {
       month: parseInt(r[C.sm], 10) || 0, year: y, type,
       deaths: 0, deathsUS: 0, dmgK: 0, dmgUSK: 0, nC: 0,
       name: '', country: '',
+      // detail accumulators
+      subtype: '', location: '', origin: '', assoc: '', mag: null, magScale: '',
+      endDay: null, injured: 0, affected: 0, homeless: 0, insK: 0,
+      appeal: false, decl: false, byCountry: [], locDeaths: -1,
     };
     events.set(key, e);
   }
@@ -128,6 +138,26 @@ for (let i = 1; i < rows.length; i++) {
   // keep the earliest start date across country rows
   const rowDay = dayOf(y, parseInt(r[C.sm], 10) || 0, parseInt(r[C.sd], 10) || 0);
   if (rowDay < e.day) { e.day = rowDay; e.month = parseInt(r[C.sm], 10) || e.month; }
+  // details: sums, flags, latest end date, first magnitude, and the
+  // location text of the worst-hit country row (most representative)
+  e.injured += parseFloat(r[C.injured]) || 0;
+  e.affected += parseFloat(r[C.affected]) || 0;
+  e.homeless += parseFloat(r[C.homeless]) || 0;
+  e.insK += parseFloat(r[C.insAdj]) || 0;
+  if (r[C.appeal] === 'Yes') e.appeal = true;
+  if (r[C.decl] === 'Yes') e.decl = true;
+  if (!e.subtype && r[C.subtype]) e.subtype = r[C.subtype].slice(0, 40);
+  if (!e.origin && r[C.origin]) e.origin = r[C.origin].slice(0, 80);
+  if (!e.assoc && r[C.assoc]) e.assoc = r[C.assoc].slice(0, 80);
+  const mg = parseFloat(r[C.mag]);
+  if (e.mag === null && Number.isFinite(mg)) { e.mag = mg; e.magScale = (r[C.magScale] || '').slice(0, 30); }
+  const eyr = parseInt(r[C.ey], 10);
+  if (Number.isFinite(eyr)) {
+    const endDay = dayOf(eyr, parseInt(r[C.em], 10) || 0, parseInt(r[C.ed], 10) || 0);
+    if (e.endDay === null || endDay > e.endDay) e.endDay = endDay;
+  }
+  if (d > e.locDeaths && r[C.location]) { e.location = r[C.location].replaceAll(/\s+/g, ' ').slice(0, 180); e.locDeaths = d; }
+  e.byCountry.push({ c: r[C.country].slice(0, 40), d: Math.round(d), k: Math.round(dmg) });
 }
 
 const list = [...events.values()].sort((a, b) => a.day - b.day);
@@ -190,5 +220,38 @@ const out = {
 mkdirSync(OUT, { recursive: true });
 writeFileSync(join(OUT, 'impacts.json'), JSON.stringify(out));
 console.log(`written ${OUT}/impacts.json (${(JSON.stringify(out).length / 1e6).toFixed(2)} MB)`);
+
+// data/impact-details.json — narrative-level detail for every LABELED
+// event (the ones the UI names: deaths ≥ 1,000 or damage ≥ $10B), keyed
+// by the event's index in impacts.json's arrays. Lazy-loaded by the
+// dashboard on first popup open.
+const details = {};
+list.forEach((e, idx) => {
+  if (!(e.deaths >= 1000 || e.dmgK >= 1e7)) return;
+  const det = { st: e.subtype };
+  if (e.endDay !== null && e.endDay > e.day) det.end = e.endDay;
+  if (e.location) det.loc = e.location;
+  if (e.origin) det.org = e.origin;
+  if (e.assoc) det.as = e.assoc;
+  if (e.mag !== null) { det.mag = e.mag; det.ms = e.magScale; }
+  if (e.injured > 0) det.inj = Math.round(e.injured);
+  if (e.affected > 0) det.aff = Math.round(e.affected);
+  if (e.homeless > 0) det.hml = Math.round(e.homeless);
+  if (e.insK > 0) det.insK = Math.round(e.insK);
+  if (e.appeal) det.ap = 1;
+  if (e.decl) det.dc = 1;
+  if (e.nC > 1) {
+    det.bc = e.byCountry
+      .filter((r) => r.d > 0 || r.k > 0)
+      .sort((a, b) => (b.d - a.d) || (b.k - a.k))
+      .slice(0, 10);
+  }
+  details[idx] = det;
+});
+writeFileSync(join(OUT, 'impact-details.json'), JSON.stringify({
+  meta: { note: 'Detail sidecar for labeled events; keys are impacts.json indices. Same EM-DAT source and terms.', buildDate: out.meta.buildDate },
+  details,
+}));
+console.log(`written ${OUT}/impact-details.json — ${Object.keys(details).length} events (${(JSON.stringify(details).length / 1024).toFixed(0)} KB)`);
 const d100 = list.filter((e) => e.deaths >= 100 && e.year >= 1990).length / (2024.16 - 1990);
 console.log(`sanity: λ(deaths ≥ 100, 1990+) = ${d100.toFixed(1)}/yr`);
