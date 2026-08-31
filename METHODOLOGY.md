@@ -341,3 +341,91 @@ irresponsible at the "quotable number" bar this project sets.)
 
 - Delforge, D., et al. (2025). EM-DAT: the Emergency Events Database. *Int. J. Disaster Risk Reduction*.
 - UNDRR & CRED (2020). *Human cost of disasters 2000–2019.*
+
+---
+
+# Part III — Deep history: what centuries can and cannot tell us
+
+Part II's impact rates stop at 1900 because EM-DAT does. The deep-history layer
+extends the record to ~2150 BC (earthquakes) and the early Holocene (eruptions),
+with a strict separation between two uses:
+
+## 14. Sources
+
+- **NCEI/WDS Global Significant Earthquake Database** (NOAA/NCEI, public
+  domain): destructive earthquakes 2150 BC → present with documentary death
+  tolls, magnitudes, tsunami flags. Snapshot 2021-03 via the official TSV in
+  `rsizem2/noaa-earthquakes`.
+- **Smithsonian Global Volcanism Program, Volcanoes of the World**: confirmed
+  Holocene eruptions with VEI, via the TidyTuesday 2020-05-12 extract.
+  Citation: Global Volcanism Program, Smithsonian Institution (comp. Venzke).
+
+## 15. Occurrence rates for extremes — where the deep record is trustworthy
+
+Some events are too large to escape documentation, so their record is complete
+over centuries even without instruments:
+
+| Class | Window | Basis | Result |
+|---|---|---|---|
+| VEI ≥ 6 eruption | 1500 → | Brown et al. (2014): the VEI≥6 record is essentially complete post-1500 | 9 events → **~1.7/century** (λ ≈ 0.017/yr) |
+| VEI ≥ 7 eruption | 900 → | ice cores + global tephra make these unmissable for ~a millennium | 3 events (Paektu 946, Samalas 1257, Tambora 1815) → **~1 per ~370 yrs**, with the very wide CI n=3 deserves |
+| M ≥ 8.5 earthquake | 1900 → | instrumental only — see § 16 | ~16 events → λ ≈ 0.13/yr |
+
+Probabilities are homogeneous Poisson over these rates. These are **occurrence**
+probabilities: a VEI-7 anywhere on Earth, not a death toll — impact depends
+entirely on where it happens (Tambora's toll came with a starving year worldwide;
+a repeat today would be a global agricultural event).
+
+## 16. Where the deep record must NOT feed rates — and why that is a finding, not an assumption
+
+Documented M ≥ 8.5 earthquakes per century climb 3 → 6 → 7 → 9 → 11 from the
+1500s to the 1900s. Two hypotheses fit that curve: better record-keeping, or
+genuinely increasing seismicity. We do not assume the answer — we test it
+against the data (both analyses run in `test/deep.test.mjs` on every build):
+
+**Stationarity inside the constant-detection era.** Since ~1918, detection of
+M ≥ 7 events is complete and unchanging, so any real secular increase must
+show there. Raw decade counts wiggle upward slightly, but earthquake counts
+are clustered (aftershocks; the measured inter-event CV > 1 of § 3.2), which
+inflates variance and mimics trends. After Gardner–Knopoff-style
+declustering (drop events within 1.5 yr and 300 km after a larger shock),
+the 1920s–2010s decade counts are 108, 113, 120, 86, 113, 127, 93, 120, 118,
+128: homogeneity χ² = 15.1 (df = 9, below the 16.9 five-percent cutoff) and
+trend z = 1.3 — statistically flat. This reproduces Shearer & Stark (2012),
+who posed exactly this question after the 2004–2011 cluster of great quakes.
+
+**The size of the documentary undercount.** Over 1500–1899 the documentary
+record captures ~22 M ≥ 7.5 events per century; instruments record 124–184
+per century — roughly one event in six was written down, with remote and
+oceanic earthquakes the largest missing class. For rising seismicity to
+explain the ramp instead, rates would have had to jump ~6× precisely when
+seismometers were deployed and then hold flat for the 120 years since — which
+the stationarity test above rules out.
+
+The honest limit of the claim: "no trend across a century of constant
+measurement" is not proof of stationarity over millennia; it is the strongest
+statement the data permit, and the model needs nothing stronger — every rate
+is computed inside a constant-detection window, so no assumption about the
+documentary era enters the numbers at all. Death tolls face the additional,
+untestable-by-us confound that a toll from 1556 reflects 1556's buildings and
+population (~0.4 ≥100k-death quakes/century documented pre-1900 vs ~5/century
+since — documentation and population growth compounded). Consequently:
+
+- occurrence windows for earthquakes stay instrumental;
+- the dashboard's death/damage probability windows stay at Part II's 1900+
+  policy;
+- documentary catastrophes appear only in the era-labeled display record
+  (`centuryRamp()` in `deep.js` reproduces the evidence; the test suite
+  asserts the ramp exists).
+
+Pre-1900 death tolls shown (Antioch 115: ~260,000; Shaanxi 1556: ~830,000) are
+chronicle-derived estimates with order-of-magnitude uncertainty, labeled by
+source.
+
+## 17. Additional references (Part III)
+
+- Brown, S. K., et al. (2014). Characterisation of the Quaternary eruption record: the LaMEVE database. *J. Applied Volcanology* 3:5.
+- Newhall, C. G., & Self, S. (1982). The Volcanic Explosivity Index (VEI). *JGR* 87.
+- Shearer, P. M., & Stark, P. B. (2012). Global risk of big earthquakes has not recently increased. *PNAS* 109(3).
+- Rougier, J., et al. (2018). The global magnitude–frequency relationship for large explosive volcanic eruptions. *EPSL* 482.
+- National Geophysical Data Center / World Data Service: NCEI/WDS Global Significant Earthquake Database. NOAA. doi:10.7289/V5TD9V7K

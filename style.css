@@ -146,3 +146,17 @@ footer a { color: var(--accent-2); }
 #events-list .d { color: var(--muted); font-variant-numeric: tabular-nums; }
 #events-list .m { font-weight: 600; }
 #events-list .val { text-align: right; color: var(--accent-2); font-variant-numeric: tabular-nums; }
+
+/* deep history */
+.extreme-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+@media (max-width: 820px) { .extreme-cards { grid-template-columns: 1fr; } }
+.extreme-card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+.extreme-card .xl { font-size: 26px; font-weight: 300; color: var(--accent-2); font-variant-numeric: tabular-nums; }
+.extreme-card .name { font-size: 12.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.extreme-card .sm { color: var(--muted); font-size: 12px; }
+#giants-list { max-height: 380px; overflow-y: auto; font-size: 13px; }
+#giants-list .ev { display: grid; grid-template-columns: 78px 92px 1fr 120px; gap: 10px; padding: 5px 2px; border-bottom: 1px solid var(--line); }
+#giants-list .d { color: var(--muted); font-variant-numeric: tabular-nums; }
+#giants-list .m { font-weight: 600; }
+#giants-list .val { text-align: right; color: var(--accent-2); font-variant-numeric: tabular-nums; }
+#giants-list .src { color: var(--muted); font-size: 11px; }
