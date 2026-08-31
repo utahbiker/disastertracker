@@ -162,3 +162,21 @@ footer a { color: var(--accent-2); }
 #giants-list .src { color: var(--muted); font-size: 11px; }
 
 .ver { font-size: 12px; color: var(--muted); font-weight: 400; letter-spacing: 0.03em; vertical-align: 3px; margin-left: 6px; font-variant-numeric: tabular-nums; }
+
+/* ── "Happening now" live layer ─────────────────────────────────────── */
+.live-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 720px) { .live-grid { grid-template-columns: 1fr; } }
+.live-col { min-height: 64px; }
+.live-head { font-size: 13px; letter-spacing: 0.03em; margin-bottom: 8px; color: var(--text); }
+.live-src { font-size: 10px; color: var(--muted); border: 1px solid var(--muted); border-radius: 99px; padding: 1px 7px; margin-left: 6px; vertical-align: 1px; }
+.live-big { font-size: 22px; margin: 2px 0 6px; }
+.live-big b { color: var(--accent-2); }
+.live-verdict { font-size: 11px; border-radius: 99px; padding: 2px 9px; margin-left: 8px; border: 1px solid var(--muted); color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; vertical-align: 3px; }
+.live-verdict.up { border-color: var(--danger); color: var(--danger); }
+.live-verdict.down { border-color: #7fa8d9; color: #7fa8d9; }
+.live-alert { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; font-size: 13px; }
+.alert-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; align-self: center; }
+.alert-dot.red { background: #d4756a; box-shadow: 0 0 6px #d4756a; }
+.alert-dot.orange { background: #e0a34f; }
+.alert-dot.ongoing { background: var(--muted); }
+.live-wait { color: var(--muted); }

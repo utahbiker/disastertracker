@@ -2,6 +2,7 @@
 // (modern impacts) and deep.js (deep-history extremes).
 import * as I from './impact.js';
 import * as D from './deep.js';
+import * as L from './live.js';
 import { VERSION } from './version.js';
 
 const $ = (id) => document.getElementById(id);
@@ -79,6 +80,68 @@ async function init() {
   wireControls();
   readHash();
   renderAll();
+  startLive();
+}
+
+// ─── "Happening now" live layer (live.js) — display only, never feeds the
+// probability model; each source fails independently and visibly ─────────
+
+const LIVE_REFRESH_MS = 10 * 60 * 1000;
+
+async function renderLivePulse() {
+  const box = $('live-pulse');
+  try {
+    const p = await L.fetchSeismicPulse();
+    const v = L.seismicPulseVerdict(p.observed);
+    const tone = v.verdict === 'elevated' ? 'up' : v.verdict === 'quiet' ? 'down' : '';
+    const biggest = p.largest[0];
+    box.innerHTML = `
+      <div class="live-head">🌐 Global seismicity, last ${L.PULSE_WINDOW_DAYS} days <span class="live-src">USGS, live</span></div>
+      <div class="live-big"><b>${fmtInt(p.observed)}</b> <span class="sm">M 5+ earthquakes</span>
+        <span class="live-verdict ${tone}">${v.verdict}</span></div>
+      <div class="sm">long-run pace: ${Math.round(v.mu)} per ${L.PULSE_WINDOW_DAYS} days · typical range ${v.lo}–${v.hi} <span class="subtle">(95% Poisson band from this site's own catalog)</span></div>
+      ${biggest ? `<div class="sm">largest: <b>M ${biggest.mag.toFixed(1)}</b> — ${biggest.place} <span class="subtle">(${new Date(biggest.timeMs).toISOString().slice(0, 10)})</span></div>` : ''}`;
+    return true;
+  } catch {
+    box.innerHTML = '<span class="sm subtle">USGS live feed unreachable — the seismic pulse will retry.</span>';
+    return false;
+  }
+}
+
+async function renderLiveAlerts() {
+  const box = $('live-alerts');
+  try {
+    const a = await L.fetchAlerts();
+    const rows = a.alerts.slice(0, 8).map((al) => `
+      <div class="live-alert">
+        <span class="alert-dot ${al.level}"></span>
+        <span>${al.icon} <b>${al.name || al.label}</b>${al.country ? ` — ${al.country}` : ''}
+          <span class="subtle sm">${al.label}${al.from ? ` · since ${al.from}` : ''}</span></span>
+      </div>`).join('');
+    const quiet = a.alerts.length === 0
+      ? '<div class="sm subtle">No red or orange alerts right now.</div>' : '';
+    const greens = a.greens > 0 ? `<div class="sm subtle">+ ${a.greens} minor (green) events being tracked</div>` : '';
+    box.innerHTML = `
+      <div class="live-head">🚨 Active disaster alerts <span class="live-src">${a.source}, live</span></div>
+      ${rows}${quiet}${greens}`;
+    return true;
+  } catch {
+    box.innerHTML = '<span class="sm subtle">Alert feeds (GDACS / ReliefWeb) unreachable — will retry.</span>';
+    return false;
+  }
+}
+
+async function refreshLive() {
+  const [okP, okA] = await Promise.all([renderLivePulse(), renderLiveAlerts()]);
+  const t = new Date().toTimeString().slice(0, 5);
+  $('live-status').textContent = okP || okA
+    ? `Updated ${t} · refreshes every 10 minutes · live feeds never feed the probability model — the statistics below come only from the validated historical record.`
+    : 'Live feeds unreachable from this network. Everything below is unaffected — it runs on the bundled record.';
+}
+
+function startLive() {
+  refreshLive();
+  setInterval(refreshLive, LIVE_REFRESH_MS);
 }
 
 function assessment() {
