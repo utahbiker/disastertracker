@@ -373,6 +373,21 @@ irresponsible at the "quotable number" bar this project sets.)
    so it would corrupt rather than corroborate. NOAA Storm Events is the
    right future US enrichment source.
 
+## 12b. The live layer ("Happening now") — display only
+
+The dashboard's top panel shows live situational awareness fetched by the
+visitor's browser from open feeds: USGS FDSN (global M ≥ 5 seismicity, last
+30 days), and GDACS alert levels (ReliefWeb latest-disasters as automatic
+fallback). **Nothing in this layer feeds the probability model** — alert
+levels and live counts have different semantics from the validated
+historical record, and the separation is architectural (live.js cannot
+touch the rate estimators). The one statistical statement it makes is the
+seismic-pulse verdict: the observed 30-day M ≥ 5 count against the exact
+central 95% Poisson band of the long-run rate from this site's own catalog
+(λ = 1,778/yr, pinned to the catalog by a CI test) — "quiet / normal /
+elevated" in the plain Poisson sense. Every feed degrades independently
+and visibly; an unreachable feed changes nothing below it.
+
 ## 13. Additional references
 
 - Delforge, D., et al. (2025). EM-DAT: the Emergency Events Database. *Int. J. Disaster Risk Reduction*.
