@@ -306,7 +306,11 @@ export function mergeGlobeEvents(quakes, alerts, storms = [], nowMs = Date.now()
     if (s.trackPts > 1 && Number.isFinite(s.sinceMs)) info.push(['Track', `${s.trackPts} positions since ${new Date(s.sinceMs).toISOString().slice(0, 10)}`]);
     info.push(['Latest position', fmtCoords(s.lat, s.lon)]);
     const links = [];
-    if (s.url) links.push({ t: `${s.agency ? s.agency + ' storm tracking' : 'Storm tracking'} — live updates`, u: s.url });
+    if (s.url) {
+      links.push(s.agencyHome
+        ? { t: `${s.agency} active-storms page — live updates (this storm listed there)`, u: s.url }
+        : { t: `${s.agency ? s.agency + ' storm tracking' : 'Storm tracking'} — live updates`, u: s.url });
+    }
     links.push(mapsLink(s.lat, s.lon));
     out.push({
       kind: 'TC', icon: '🌀', color: PING.TC, sev: stormSeverity(s.kts),
@@ -342,6 +346,14 @@ export async function fetchGlobeQuakes(days = GLOBE_WINDOW_DAYS) {
   }));
 }
 
+// raw-data-product URLs that would download instead of opening a page
+export const STORM_FILE_RE = /\.(tcw|txt|dat|kmz|kml|zip|pdf|gif|png|jpg)(\?|#|$)/i;
+// live storm pages per agency, used when only file URLs are available
+export const AGENCY_STORM_PAGES = {
+  JTWC: 'https://www.metoc.navy.mil/jtwc/jtwc.html',
+  NOAA_NHC: 'https://www.nhc.noaa.gov/',
+};
+
 /**
  * NASA EONET open severe storms at hurricane strength (≥ 64 kt) — the one
  * open feed with precise, current storm positions and permissive CORS.
@@ -359,8 +371,16 @@ export function parseEonetStorms(json, minKts = EONET_MIN_KTS) {
     }
     if (maxKts < minKts || !last) continue;
     const t = Date.parse(last.date);
-    // the tracking agency's own page (NHC/JTWC/...) beats the EONET API link
-    const src = Array.isArray(ev.sources) ? ev.sources.find((s) => typeof s?.url === 'string') : null;
+    // The tracking agency's own PAGE beats the EONET API link — but some
+    // agencies (JTWC) list raw advisory FILES (.tcw etc.) as their source
+    // URL, which the browser downloads instead of opening. Never link a
+    // data file: substitute the agency's live storm page, and say so.
+    const sources = Array.isArray(ev.sources) ? ev.sources.filter((x) => typeof x?.url === 'string') : [];
+    const pageSrc = sources.find((x) => !STORM_FILE_RE.test(x.url));
+    const anySrc = pageSrc ?? sources[0] ?? null;
+    let url = null, agencyHome = false;
+    if (pageSrc) url = pageSrc.url;
+    else if (anySrc && AGENCY_STORM_PAGES[anySrc.id]) { url = AGENCY_STORM_PAGES[anySrc.id]; agencyHome = true; }
     out.push({
       name: String(ev.title ?? 'Severe storm').slice(0, 60),
       kts: maxKts,
@@ -368,8 +388,9 @@ export function parseEonetStorms(json, minKts = EONET_MIN_KTS) {
       timeMs: Number.isFinite(t) ? t : null,
       trackPts: nPts,
       sinceMs: first ? Date.parse(first.date) : null,
-      agency: src?.id ?? null,
-      url: src?.url ?? (typeof ev.link === 'string' ? ev.link : null),
+      agency: anySrc?.id ?? null,
+      agencyHome,
+      url,
     });
   }
   return out;
