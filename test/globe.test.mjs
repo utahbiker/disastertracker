@@ -218,3 +218,30 @@ test('ping severity scales: magnitude, wind, alert level', async () => {
   assert.equal(out.find((e) => e.title === 'Cat5').sev, 1);
   assert.equal(out.find((e) => e.title.startsWith('F')).sev, alertSeverity('red'));
 });
+
+test('storm links never point at raw data files (JTWC .tcw case)', async () => {
+  const { AGENCY_STORM_PAGES } = await import('../live.js');
+  const now = new Date().toISOString();
+  const mk = (sources) => ({ events: [{ title: 'Typhoon T', link: 'https://eonet.gsfc.nasa.gov/api/v3/events/E1', sources,
+    geometry: [{ date: now, coordinates: [130, 18], magnitudeValue: 90, magnitudeUnit: 'kts' }] }] });
+  // JTWC file URL → substituted with the JTWC live page, flagged
+  const jtwc = parseEonetStorms(mk([{ id: 'JTWC', url: 'https://www.metoc.navy.mil/jtwc/products/wp0126.tcw' }]))[0];
+  assert.equal(jtwc.url, AGENCY_STORM_PAGES.JTWC);
+  assert.equal(jtwc.agencyHome, true);
+  // NHC page URL → kept as-is
+  const nhc = parseEonetStorms(mk([{ id: 'NOAA_NHC', url: 'https://www.nhc.noaa.gov/text/refresh/MIATCPEP4.shtml' }]))[0];
+  assert.equal(nhc.url, 'https://www.nhc.noaa.gov/text/refresh/MIATCPEP4.shtml');
+  assert.equal(nhc.agencyHome, false);
+  // page URL preferred over a file URL when both exist
+  const both = parseEonetStorms(mk([
+    { id: 'JTWC', url: 'https://www.metoc.navy.mil/jtwc/products/wp0126.tcw' },
+    { id: 'NOAA_NHC', url: 'https://www.nhc.noaa.gov/storm' },
+  ]))[0];
+  assert.equal(both.url, 'https://www.nhc.noaa.gov/storm');
+  // unknown agency with only a file URL → no tracking link at all (map only)
+  const unk = parseEonetStorms(mk([{ id: 'MYSTERY', url: 'https://example.com/data.kmz' }]))[0];
+  assert.equal(unk.url, null);
+  // merge label says the storm is listed on the agency page
+  const out = mergeGlobeEvents([], [], [jtwc], Date.now());
+  assert.ok(out[0].links.some((l) => /active-storms page/.test(l.t) && l.u === AGENCY_STORM_PAGES.JTWC));
+});
