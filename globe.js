@@ -170,29 +170,33 @@ export class Globe {
     for (const ring of this.world.rings) this._ring(ring);
 
     // pings: white-hot core + colored glow halo + two staggered expanding
-    // sonar rings. Deliberately loud — this is the whole point of the globe.
+    // sonar rings, ALL SIZED BY SEVERITY (e.sev ∈ [0,1]): a threshold-grade
+    // event murmurs, a M9 / Cat-5 dominates the hemisphere.
     this.events.forEach((e, i) => {
       const s = this._screen(e.lat, e.lon);
       if (!s.visible) return;
       const sel = i === this.selected;
-      const maxR = sel ? 30 : 20;
+      const sev = Number.isFinite(e.sev) ? e.sev : 0.5;
+      const boost = sel ? 1.35 : 1;
+      const maxR = (12 + sev * 30) * boost;   // ring reach: 12 → 42 px
+      const halo = (3 + sev * 4.5) * boost;   // solid halo: 3 → 7.5 px
       for (const off of [0, 0.5]) {
         const phase = ((t / 1600) + i * 0.37 + off) % 1;
-        const rr = 5 + phase * maxR;
-        ctx.strokeStyle = e.color.replace('ALPHA', ((1 - phase) * (sel ? 1 : 0.85)).toFixed(3));
-        ctx.lineWidth = sel ? 2.4 : 2;
+        const rr = halo + 1 + phase * maxR;
+        ctx.strokeStyle = e.color.replace('ALPHA', ((1 - phase) * (0.55 + sev * 0.4) * (sel ? 1.1 : 1)).toFixed(3));
+        ctx.lineWidth = (1.4 + sev * 1.4) * boost;
         ctx.beginPath(); ctx.arc(s.x, s.y, rr, 0, 7); ctx.stroke();
       }
       // glow halo
       ctx.save();
       ctx.shadowColor = e.color.replace('ALPHA', '1');
-      ctx.shadowBlur = sel ? 16 : 10;
+      ctx.shadowBlur = (7 + sev * 12) * boost;
       ctx.fillStyle = e.color.replace('ALPHA', '1');
-      ctx.beginPath(); ctx.arc(s.x, s.y, sel ? 6 : 4.5, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(s.x, s.y, halo, 0, 7); ctx.fill();
       ctx.restore();
       // white-hot center
       ctx.fillStyle = 'rgba(255,255,255,0.95)';
-      ctx.beginPath(); ctx.arc(s.x, s.y, sel ? 2.6 : 1.8, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(1.4, halo * 0.4), 0, 7); ctx.fill();
       if (sel) {
         ctx.fillStyle = 'rgba(232,236,244,0.95)';
         ctx.font = 'bold 11px sans-serif';

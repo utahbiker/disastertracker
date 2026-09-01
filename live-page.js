@@ -7,7 +7,8 @@ import { Globe } from './globe.js';
 import { VERSION } from './version.js';
 
 const $ = (id) => document.getElementById(id);
-const REFRESH_MS = 10 * 60 * 1000;
+const REFRESH_MS = 2 * 60 * 1000; // per Jake: every 2 minutes while the page is open
+let lastCheckMs = null;
 const fmtInt = (n) => n.toLocaleString('en-US');
 
 const ago = (ms) => {
@@ -31,7 +32,7 @@ function renderList(events) {
   const box = $('globe-list');
   box.innerHTML = events.map((e, i) => `
     <div class="globe-row" data-i="${i}">
-      <span class="globe-dot" style="background:${e.color.replace('ALPHA', '1')}"></span>
+      <span class="globe-dot" style="background:${e.color.replace('ALPHA', '1')};width:${(7 + (e.sev ?? 0.5) * 6).toFixed(0)}px;height:${(7 + (e.sev ?? 0.5) * 6).toFixed(0)}px"></span>
       <span class="globe-row-main">${e.icon} <b>${e.title}</b><br>
         <span class="sm subtle">${e.detail ? e.detail + ' · ' : ''}${ago(e.timeMs)}</span>
         ${detailHtml(e)}</span>
@@ -121,12 +122,24 @@ async function renderAlerts() {
   }
 }
 
+function renderFreshness() {
+  const el = $('globe-freshness');
+  if (!el || lastCheckMs === null) return;
+  const secs = Math.max(0, Math.round((Date.now() - lastCheckMs) / 1000));
+  const agoTxt = secs < 60 ? 'moments ago' : `${Math.round(secs / 60)} min ago`;
+  const nextSecs = Math.max(0, Math.round((lastCheckMs + REFRESH_MS - Date.now()) / 1000));
+  const nextTxt = nextSecs < 60 ? 'under a minute' : `${Math.ceil(nextSecs / 60)} min`;
+  el.textContent = `⟳ Feeds checked ${agoTxt} · next check in ${nextTxt} · sources report with their own delays (quakes: minutes · alerts: hours)`;
+}
+
 async function refreshAll() {
   const [okP, okA] = await Promise.all([renderPulse(), renderAlerts()]);
   await refreshGlobe();
+  lastCheckMs = Date.now();
+  renderFreshness();
   const t = new Date().toTimeString().slice(0, 5);
   $('live-status').textContent = okP || okA
-    ? `Updated ${t} · refreshes every 10 minutes · live feeds never feed the probability model.`
+    ? `Updated ${t} · refreshes every 2 minutes while the page is open · live feeds never feed the probability model.`
     : 'Live feeds unreachable from this network. The statistics on the Overview run on the bundled record and are unaffected.';
 }
 
@@ -135,7 +148,13 @@ async function init() {
   const world = await (await fetch('data/world-outline.json')).json();
   globe = new Globe($('globe'), world, { onSelect: (i) => highlight(i, true) });
   refreshAll();
-  setInterval(refreshAll, REFRESH_MS);
+  // "every 2 minutes while the page is active": skip checks in hidden tabs
+  // (kind to the APIs), catch up immediately when the tab comes back
+  setInterval(() => { if (!document.hidden) refreshAll(); }, REFRESH_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && lastCheckMs !== null && Date.now() - lastCheckMs > REFRESH_MS) refreshAll();
+  });
+  setInterval(renderFreshness, 15000); // the stamp ticks even between checks
 }
 
 init().catch((err) => {

@@ -191,3 +191,30 @@ test('EONET agency source link preferred over the API link', () => {
   assert.equal(out[0].url, 'https://www.nhc.noaa.gov/storm');
   assert.equal(out[0].agency, 'NOAA_NHC');
 });
+
+test('ping severity scales: magnitude, wind, alert level', async () => {
+  const { quakeSeverity, stormSeverity, alertSeverity } = await import('../live.js');
+  // quakes: threshold → 0, M9 → 1, monotone
+  assert.equal(quakeSeverity(5.9), 0);
+  assert.equal(quakeSeverity(9.0), 1);
+  assert.equal(quakeSeverity(10), 1); // clamped
+  assert.ok(quakeSeverity(6.5) < quakeSeverity(7.5));
+  // storms: Cat-1 threshold → 0, Cat-5 floor → 1
+  assert.equal(stormSeverity(64), 0);
+  assert.equal(stormSeverity(137), 1);
+  assert.ok(stormSeverity(83) < stormSeverity(115));
+  // alerts: red > orange > ongoing
+  assert.ok(alertSeverity('red') > alertSeverity('orange'));
+  assert.ok(alertSeverity('orange') > alertSeverity('ongoing'));
+  // merged events carry sev
+  const now = Date.now();
+  const out = mergeGlobeEvents(
+    [{ mag: 8.8, lat: 0, lon: 0, timeMs: now, place: 'huge' }, { mag: 5.9, lat: 30, lon: 30, timeMs: now - 1, place: 'small' }],
+    [{ type: 'FL', level: 'red', lat: -20, lon: 60, timeMs: now - 2, name: 'F', label: 'Flood', icon: 'x' }],
+    [{ name: 'Cat5', kts: 140, lat: 20, lon: -60, timeMs: now - 3 }], now);
+  const huge = out.find((e) => e.title.includes('huge'));
+  const small = out.find((e) => e.title.includes('small'));
+  assert.ok(huge.sev > 0.9 && small.sev === 0);
+  assert.equal(out.find((e) => e.title === 'Cat5').sev, 1);
+  assert.equal(out.find((e) => e.title.startsWith('F')).sev, alertSeverity('red'));
+});
