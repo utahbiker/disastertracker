@@ -227,6 +227,16 @@ export function ssCategory(kts) {
   return 0;
 }
 
+// ─── ping severity: 0 (barely qualifies) → 1 (historic) ─────────────────
+// Drives the sonar ping size on the globe: a M9 megathrust or a Category-5
+// hurricane should dominate the map; a threshold M5.9 or a Cat-1 should
+// murmur. Scales are linear in each hazard's own severity coordinate
+// (magnitude is already log-energy; Saffir–Simpson is linear in wind).
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
+export const quakeSeverity = (mag) => clamp01((mag - GLOBE_QUAKE_MIN_MAG) / (9.0 - GLOBE_QUAKE_MIN_MAG));
+export const stormSeverity = (kts) => clamp01((kts - EONET_MIN_KTS) / (137 - EONET_MIN_KTS));
+export const alertSeverity = (level) => (level === 'red' ? 0.8 : level === 'orange' ? 0.35 : 0.25);
+
 const mapsLink = (lat, lon) => ({ t: 'Map', u: `https://www.google.com/maps?q=${lat.toFixed(3)},${lon.toFixed(3)}` });
 const fmtCoords = (lat, lon) => `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(2)}°${lon >= 0 ? 'E' : 'W'}`;
 
@@ -250,7 +260,7 @@ export function mergeGlobeEvents(quakes, alerts, storms = [], nowMs = Date.now()
     if (q.url) links.push({ t: 'USGS event page — live updates', u: q.url });
     links.push(mapsLink(q.lat, q.lon));
     out.push({
-      kind: 'EQ', icon: '🌐', color: PING.quake,
+      kind: 'EQ', icon: '🌐', color: PING.quake, sev: quakeSeverity(q.mag),
       lat: q.lat, lon: q.lon, timeMs: q.timeMs,
       title: `M ${q.mag.toFixed(1)} — ${q.place || 'earthquake'}`,
       short: `M ${q.mag.toFixed(1)}`,
@@ -277,7 +287,7 @@ export function mergeGlobeEvents(quakes, alerts, storms = [], nowMs = Date.now()
     if (a.url) links.push({ t: `${src} ${src === 'GDACS' ? 'event report' : 'disaster page'} — live updates`, u: a.url });
     links.push(mapsLink(a.lat, a.lon));
     out.push({
-      kind, icon: a.icon, color: PING[kind] ?? PING.other,
+      kind, icon: a.icon, color: PING[kind] ?? PING.other, sev: alertSeverity(a.level),
       lat: a.lat, lon: a.lon, timeMs: a.timeMs,
       title: `${base}${withCountry ? ` — ${a.country}` : ''}`,
       short: a.name || a.label,
@@ -299,7 +309,7 @@ export function mergeGlobeEvents(quakes, alerts, storms = [], nowMs = Date.now()
     if (s.url) links.push({ t: `${s.agency ? s.agency + ' storm tracking' : 'Storm tracking'} — live updates`, u: s.url });
     links.push(mapsLink(s.lat, s.lon));
     out.push({
-      kind: 'TC', icon: '🌀', color: PING.TC,
+      kind: 'TC', icon: '🌀', color: PING.TC, sev: stormSeverity(s.kts),
       lat: s.lat, lon: s.lon, timeMs: s.timeMs,
       title: s.name,
       short: s.name,

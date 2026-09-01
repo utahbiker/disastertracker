@@ -226,3 +226,4 @@ footer a { color: var(--accent-2); }
 .globe-det-links { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 .globe-det-link { color: var(--accent-2); font-size: 12.5px; text-decoration: none; }
 .globe-det-link:hover { text-decoration: underline; }
+.freshness { color: var(--muted); font-size: 12px; margin: -4px 0 12px; letter-spacing: 0.02em; }
