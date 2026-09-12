@@ -413,10 +413,74 @@ central 95% Poisson band of the long-run rate from this site's own catalog
 elevated" in the plain Poisson sense. Every feed degrades independently
 and visibly; an unreachable feed changes nothing below it.
 
+## 12c. The seismologist's watchlist — sub-threshold anomaly radar
+
+The globe's M ≥ 5.9 bar is the right filter for "major events", but the
+patterns a seismologist actually watches live *below* it: swarm
+switch-ons, accelerating sequences, magnitudes that keep climbing. The
+watchlist card scans USGS's rolling 30-day **M ≥ 1.0** feed (rescanned
+every ~15 minutes; the feed is heavy, so it runs on its own cadence) and
+flags **statistical anomalies**, defined precisely:
+
+- The planet is gridded into ~83 km cells (0.75° latitude bands,
+  longitude width widened by 1/cos so cells stay near-equal-area).
+- Each cell's **last 7 days** are tested against **that same cell's
+  prior 23 days**: with n₂₃ baseline events, the expected recent count
+  is μ = 7 · max(n₂₃, ½)/23 (the ½-event pseudo-count keeps the test
+  defined when a swarm switches on in silence), and the cell flags when
+  the exact Poisson tail P(X ≥ n₇ | μ) < 10⁻⁴ with n₇ ≥ 10. Flagged
+  neighbors within 200 km merge — one swarm, not two half-swarms.
+- **Self-relative baselines are the point**: catalog completeness is
+  wildly uneven (US networks report M 1.0; mid-ocean ridges start near
+  M 4.5). Comparing each cell with itself cancels that out of the rate
+  ratio instead of minting fake anomalies at network boundaries — the
+  same instrument-vs-itself logic as § 7's completeness windows. The
+  honest residual: regions that don't report microseismicity at all
+  can't produce a sub-threshold anomaly here, so the watchlist sees
+  well-instrumented ground best.
+- **Classification, because not every anomaly means the same thing**: a
+  cluster whose largest event (M ≥ 5.0) *leads* the burst, with at least
+  half the cluster after it and nothing later exceeding it, is an
+  **aftershock sequence** — expected Omori-law physics (Utsu et al.
+  1995), labeled "expected" and ranked last. Everything else is a
+  **swarm** ("new swarm" when the baseline held ≤ 2 events), and a swarm
+  whose recent maximum exceeds its baseline maximum (or, for brand-new
+  swarms with ≥ 3 events in each half of their own timeline, whose
+  second-half maximum exceeds the first) is tagged **escalating** — the
+  pattern most worth watching, and the one that preceded e.g. Ridgecrest
+  2019 (M 6.4 foreshock → M 7.1) and Kumamoto 2016 (M 6.2 → M 7.0, 28 h
+  later).
+
+**What the watchlist deliberately is not: prediction.** No reliable
+short-term earthquake precursor is known (Geller 1997; ICEF 2011).
+Retrospectively, roughly half of large earthquakes had foreshocks
+(Jones & Molnar 1979), but prospectively the arrow is weak: worldwide,
+the probability that any given earthquake is followed by a **larger**
+one nearby within a week is about **5%** (USGS aftershock/foreshock
+statistics; Reasenberg & Jones 1989 is the operational formulation),
+and the vast majority of swarms end without a significant event.
+Research systems that try to do better in real time (e.g. the
+foreshock-discrimination traffic light of Gulia & Wiemer 2019, which
+tracks b-value drops after M ≥ 6 events) remain contested precisely
+because the signal is marginal. The watchlist therefore reports
+**anomaly, rank, and honest base rates** — "this spot is doing something
+its own history says is a < 10⁻⁴ coincidence" — and never a forecast.
+Like the rest of the live layer (§ 12b), nothing here feeds the
+probability model.
+
 ## 13. Additional references
 
 - Delforge, D., et al. (2025). EM-DAT: the Emergency Events Database. *Int. J. Disaster Risk Reduction*.
 - UNDRR & CRED (2020). *Human cost of disasters 2000–2019.*
+
+For § 12c (watchlist):
+
+- Reasenberg, P. A., & Jones, L. M. (1989). Earthquake hazard after a mainshock in California. *Science* 243, 1173–1176.
+- Jones, L. M., & Molnar, P. (1979). Some characteristics of foreshocks. *J. Geophys. Res.* 84, 3596–3608.
+- Utsu, T., Ogata, Y., & Matsu'ura, R. S. (1995). The centenary of the Omori formula. *J. Phys. Earth* 43, 1–33.
+- Geller, R. J. (1997). Earthquake prediction: a critical review. *Geophys. J. Int.* 131, 425–450.
+- ICEF — Jordan, T. H., et al. (2011). Operational earthquake forecasting: state of knowledge and guidelines. *Ann. Geophys.* 54(4).
+- Gulia, L., & Wiemer, S. (2019). Real-time discrimination of earthquake foreshocks and aftershocks. *Nature* 574, 193–199.
 
 ---
 

@@ -227,3 +227,9 @@ footer a { color: var(--accent-2); }
 .globe-det-link { color: var(--accent-2); font-size: 12.5px; text-decoration: none; }
 .globe-det-link:hover { text-decoration: underline; }
 .freshness { color: var(--muted); font-size: 12px; margin: -4px 0 12px; letter-spacing: 0.02em; }
+
+/* Seismologist's watchlist (sub-threshold anomaly radar) */
+.watch-dot { background: rgba(96,208,255,0.95); width: 9px; height: 9px; box-shadow: 0 0 8px rgba(96,208,255,0.7); }
+.watch-badge { display: inline-block; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; padding: 1.5px 7px; border-radius: 9px; background: rgba(96,208,255,0.12); color: #7fd8ff; border: 1px solid rgba(96,208,255,0.35); vertical-align: 1px; }
+.watch-badge.hot { background: rgba(255,176,80,0.12); color: #ffc07a; border-color: rgba(255,176,80,0.4); }
+.watch-badge.muted { background: rgba(138,147,166,0.1); color: var(--muted); border-color: rgba(138,147,166,0.3); }

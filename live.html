@@ -41,6 +41,24 @@
   </section>
 
   <section class="card">
+    <h3>Seismologist's watchlist <span class="subtle">sub-threshold anomalies · cyan pulses on the globe · click a row to fly there</span></h3>
+    <div id="watchlist"><span class="sm live-wait">Scanning the last 30 days of global M 1+ seismicity…</span></div>
+    <p class="hint"><b>What this is:</b> the globe above only shows events big enough to matter on their
+    own. This card hunts for the quieter pattern a seismologist watches — a spot producing far more
+    small earthquakes <i>than that same spot's own recent baseline</i>. Every ~15 minutes it scans
+    USGS's rolling 30-day M 1+ catalog, grids the planet (~83 km cells), and flags cells whose
+    last-7-day count is statistically incompatible with their prior 23 days (exact Poisson tail
+    p &lt; 10⁻⁴, ≥ 10 recent events; neighboring flagged cells merge). Sequences whose largest
+    magnitudes are still climbing get an <b>escalating</b> tag; a mainshock followed by ordinary
+    decaying aftershocks is labeled <b>expected</b> and listed last.
+    <b>What this is not:</b> earthquake prediction — no reliable precursor is known to science.
+    Worldwide, the chance that any earthquake is followed by a larger one nearby within a week is
+    about 5% (USGS), and most swarms simply end. Comparing each cell against itself keeps uneven
+    network sensitivity from minting fake anomalies, but well-instrumented regions (US, Japan,
+    Iceland…) will still dominate, because only they report M 1–2 at all. See METHODOLOGY § 12c.</p>
+  </section>
+
+  <section class="card">
     <h3>Live pulse</h3>
     <div class="live-grid">
       <div id="live-pulse" class="live-col"><span class="sm live-wait">Checking global seismicity…</span></div>
@@ -53,7 +71,8 @@
     <h3>What this page is — and is not</h3>
     <ul>
       <li><b>Situational awareness, not statistics.</b> This page shows what open live feeds report right now. Nothing here feeds the probability model — the <a href="index.html" style="color:var(--accent-2)">Overview</a> statistics come only from the validated historical record (METHODOLOGY § 12b documents the separation).</li>
-      <li><b>Sources:</b> USGS FDSN (earthquakes, public domain) and GDACS (EC/UN alert levels), with ReliefWeb as automatic fallback. Each feed degrades independently — an unreachable source shows a status line and nothing else changes.</li>
+      <li><b>Sources:</b> USGS FDSN (earthquakes, public domain; the watchlist scans the rolling 30-day M 1+ feed) and GDACS (EC/UN alert levels), with ReliefWeb as automatic fallback. Each feed degrades independently — an unreachable source shows a status line and nothing else changes.</li>
+      <li><b>The watchlist is not prediction.</b> It flags places statistically out of line with their own recent baseline. No reliable earthquake precursor is known to science; most flagged spots will quiet down on their own (METHODOLOGY § 12c).</li>
       <li><b>Globe geography:</b> Natural Earth 110m coastlines (public domain).</li>
     </ul>
   </section>

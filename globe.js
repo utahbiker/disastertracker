@@ -37,6 +37,7 @@ export class Globe {
     this.onSelect = onSelect;
     this.cLat = 18; this.cLon = -30;
     this.events = [];
+    this.marks = []; // sub-threshold watchlist anomalies: quiet cyan pulses
     this.selected = -1;
     this.lastInteract = 0;
     this.fly = null; // { fromLat, fromLon, toLat, toLon, t0, ms }
@@ -62,6 +63,9 @@ export class Globe {
   }
 
   setEvents(events) { this.events = events; }
+
+  /** Watchlist anomaly marks: [{lat, lon}] — drawn quieter than events. */
+  setMarks(marks) { this.marks = marks; }
 
   select(i, fly = true) {
     this.selected = i;
@@ -168,6 +172,19 @@ export class Globe {
     ctx.strokeStyle = 'rgba(216,201,138,0.38)';
     ctx.lineWidth = 1;
     for (const ring of this.world.rings) this._ring(ring);
+
+    // watchlist marks: sub-threshold seismic anomalies, drawn deliberately
+    // quieter than the major-event pings — one slow cyan ring, tiny core
+    this.marks.forEach((m, i) => {
+      const s = this._screen(m.lat, m.lon);
+      if (!s.visible) return;
+      const phase = ((t / 2600) + i * 0.41) % 1;
+      ctx.strokeStyle = `rgba(96,208,255,${((1 - phase) * 0.45).toFixed(3)})`;
+      ctx.lineWidth = 1.1;
+      ctx.beginPath(); ctx.arc(s.x, s.y, 3 + phase * 9, 0, 7); ctx.stroke();
+      ctx.fillStyle = 'rgba(96,208,255,0.9)';
+      ctx.beginPath(); ctx.arc(s.x, s.y, 2, 0, 7); ctx.fill();
+    });
 
     // pings: white-hot core + colored glow halo + two staggered expanding
     // sonar rings, ALL SIZED BY SEVERITY (e.sev ∈ [0,1]): a threshold-grade

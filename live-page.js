@@ -3,6 +3,7 @@
 // apply; this file is pure presentation.
 
 import * as L from './live.js';
+import * as AN from './anomaly.js';
 import { Globe } from './globe.js';
 import { VERSION } from './version.js';
 
@@ -81,6 +82,83 @@ async function refreshGlobe() {
     : 'Live feeds unreachable from this network — the globe will retry. The Overview statistics are unaffected.';
 }
 
+// ── Seismologist's watchlist ────────────────────────────────────────────
+// Sub-threshold anomaly radar (anomaly.js). The M1+ feed is heavy, so it
+// rescans on its own ~15-min cadence, not the 2-minute page cycle.
+let lastAnomalyMs = 0;
+
+const fmtP = (p) => {
+  if (p <= 0 || p < 1e-15) return '< 10⁻¹⁵';
+  const e = Math.floor(Math.log10(p));
+  return `≈ 10^${e}`;
+};
+
+const KIND_COPY = {
+  'new-swarm': 'Swarm switch-on — a previously quiet spot turned on. Most swarms end quietly; worldwide, only ~5% of earthquakes are followed by a larger one nearby within a week (USGS).',
+  'swarm': 'Rate anomaly — this spot is producing events far above its own recent baseline. Most such episodes fade without a larger event.',
+  'aftershocks': 'Aftershock sequence — a mainshock followed by ordinary Omori decay. This is expected physics, listed for context, not a warning sign.',
+};
+
+function watchBadges(c) {
+  const b = [];
+  if (c.kind === 'aftershocks') b.push('<span class="watch-badge muted">aftershocks · expected</span>');
+  else b.push(`<span class="watch-badge">${c.kind === 'new-swarm' ? 'new swarm' : 'swarm'}</span>`);
+  if (c.escalating && c.kind !== 'aftershocks') b.push('<span class="watch-badge hot">escalating magnitudes</span>');
+  return b.join(' ');
+}
+
+function renderWatchlist(clusters) {
+  const box = $('watchlist');
+  if (!clusters.length) {
+    box.innerHTML = '<div class="sm subtle">No statistical anomalies in the last 7 days — every active spot on the planet is running at its own normal pace.</div>';
+    return;
+  }
+  box.innerHTML = clusters.map((c, i) => {
+    const depth = Number.isFinite(c.medianDepthKm)
+      ? `${c.medianDepthKm.toFixed(1)} km${c.medianDepthKm < 5 ? ' — very shallow (volcanic / geothermal / induced territory)' : ''}`
+      : 'unknown';
+    const links = [
+      c.maxMagUrl ? `<a class="globe-det-link" href="${c.maxMagUrl}" target="_blank" rel="noopener">USGS page for the largest event — live updates ↗</a>` : '',
+      `<a class="globe-det-link" href="https://www.google.com/maps?q=${c.lat.toFixed(3)},${c.lon.toFixed(3)}" target="_blank" rel="noopener">Map ↗</a>`,
+    ].filter(Boolean).join('');
+    return `
+    <div class="globe-row watch-row" data-i="${i}">
+      <span class="globe-dot watch-dot"></span>
+      <span class="globe-row-main">🔬 <b>${c.place || `${c.lat.toFixed(2)}, ${c.lon.toFixed(2)}`}</b> ${watchBadges(c)}<br>
+        <span class="sm subtle">${c.n7} events in 7 days vs ${c.nPrior} in the prior 23 · largest M ${c.maxMag.toFixed(1)}</span>
+        <div class="globe-det">
+          <div class="globe-det-row"><span class="globe-det-k">Pace</span><span>${c.rateRatio >= 100 ? Math.round(c.rateRatio) : c.rateRatio.toFixed(1)}× this spot's own baseline · chance of a count this high by luck ${fmtP(c.p)}</span></div>
+          <div class="globe-det-row"><span class="globe-det-k">Largest</span><span>M ${c.maxMag.toFixed(1)} — ${new Date(c.maxMagTimeMs).toISOString().slice(0, 10)}${c.escalating && c.kind !== 'aftershocks' ? ' · maxima still climbing' : ''}</span></div>
+          <div class="globe-det-row"><span class="globe-det-k">Median depth</span><span>${depth}</span></div>
+          <div class="globe-det-row"><span class="globe-det-k">Reading</span><span>${KIND_COPY[c.kind]}</span></div>
+          <div class="globe-det-links">${links}</div>
+        </div>
+      </span>
+    </div>`;
+  }).join('');
+  for (const row of box.querySelectorAll('.watch-row')) {
+    row.addEventListener('click', (ev) => {
+      if (ev.target.closest('a')) return;
+      const c = clusters[Number(row.dataset.i)];
+      globe.flyTo(c.lat, c.lon);
+      row.classList.toggle('open');
+    });
+  }
+}
+
+async function refreshWatchlist(force = false) {
+  if (!force && Date.now() - lastAnomalyMs < AN.ANOMALY_REFRESH_MS) return;
+  try {
+    const quakes = await AN.fetchAnomalyFeed();
+    lastAnomalyMs = Date.now();
+    const clusters = AN.detectAnomalies(quakes);
+    renderWatchlist(clusters);
+    globe.setMarks(clusters.map((c) => ({ lat: c.lat, lon: c.lon })));
+  } catch {
+    if (!lastAnomalyMs) $('watchlist').innerHTML = '<span class="sm subtle">USGS M1+ feed unreachable — the watchlist will retry.</span>';
+  }
+}
+
 // pulse + alert cards (same rendering as the former dashboard section)
 async function renderPulse() {
   const box = $('live-pulse');
@@ -135,6 +213,7 @@ function renderFreshness() {
 async function refreshAll() {
   const [okP, okA] = await Promise.all([renderPulse(), renderAlerts()]);
   await refreshGlobe();
+  refreshWatchlist(); // no await: heavy feed, own 15-min cadence, fails soft
   lastCheckMs = Date.now();
   renderFreshness();
   const t = new Date().toTimeString().slice(0, 5);
