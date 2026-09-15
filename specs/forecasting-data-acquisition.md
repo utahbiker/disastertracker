@@ -750,6 +750,11 @@ Do not forget the 2004 threshold change (analysis floor moved ~M5.5 -> ~M5.0); i
 
 #### QTM template-matching catalog, Ross et al. 2019 (~1.81M events, Southern California)
 
+> **STATUS: 12dev variant RECEIVED 2026-09-15** (898,597 events, 2008–2017). Integrity
+> verified and completeness characterized — see [`forecasting-data-notes.md`](forecasting-data-notes.md).
+> Headline "complete to M0.3" holds only where the network is dense; per-cell Mc spans
+> 2.8 magnitude units. The larger 9.5dev variant (~1.81M events) is still wanted.
+
 **Why:** The single most important dataset on this list. 1.81M events over 2008-2017 versus ~180k in the standard SCSN catalog for the same window — a 10x density increase, complete to M0.3 versus M1.7. Essentially every modern result on foreshock detectability and short-term clustering in Southern California (Trugman & Ross 2019; van den Ende & Ampuero's rebuttal) runs on this catalog. EarthquakeNPP gives you only two small spatial subsets of it (Salton Sea 45,570 events and San Jacinto 21,291, both truncated at M1.0); the full 1.81M-event region-wide catalog at Mc 0.3 is not obtainable anywhere I could reach.
 
 **How:**
